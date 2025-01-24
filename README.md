@@ -4,7 +4,7 @@ A getting-started Demo of [Noj](https://scicloj.github.io/noj) v2 -- from raw da
 
 🎥[Video](https://www.youtube.com/watch?v=vnvcKtHHMVQ)
 
-📖[notebook](https://scicloj.github.io/noj-v2-getting-started/)
+📖[Notebook](https://scicloj.github.io/noj-v2-getting-started/)
 
 
 ## License
