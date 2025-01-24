@@ -7,7 +7,7 @@ A getting-started Demo of [Noj](https://scicloj.github.io/noj) v2 -- from raw da
 📖[notebook](https://scicloj.github.io/noj-v2-getting-started/)
 
 
-# License
+## License
 
 Copyright © 2025 Scicloj
 
