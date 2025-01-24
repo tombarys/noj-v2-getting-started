@@ -3,6 +3,7 @@
 format:
   html: {toc: true, toc-depth: 4, theme: cosmo, output-file: index.html}
 code-block-background: true
+title: Noj v2 Getting Started
 
 ---
 <style></style><style>.printedClojure .sourceCode {
@@ -14,9 +15,6 @@ code-block-background: true
 .clay-side-by-side {margin: 1em 0}
 </style>
 <script src="index_files/md-default0.js" type="text/javascript"></script><script src="index_files/md-default1.js" type="text/javascript"></script><script src="index_files/plotly2.js" type="text/javascript"></script>
-
-# Noj V2 Getting Started
-
 In this tutorial we analyse the data of the
 [Clojure Calendar Feed](https://clojureverse.org/t/the-clojure-events-calendar-feed-turns-2/).
 

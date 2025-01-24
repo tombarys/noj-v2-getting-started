@@ -1,5 +1,3 @@
-;; # Noj V2 Getting Started
-
 ;; In this tutorial we analyse the data of the
 ;; [Clojure Calendar Feed](https://clojureverse.org/t/the-clojure-events-calendar-feed-turns-2/).
 
