@@ -1,0 +1,2 @@
+{:remote-repo {:git-url "https://github.com/scicloj/noj-v2-getting-started"
+               :branch "main"}}
