@@ -2,11 +2,11 @@
 
 A getting-started Demo of [Noj](https://scicloj.github.io/noj) v2 -- from raw data to a blog post.
 
-🎥[Video](https://www.youtube.com/watch?v=vnvcKtHHMVQ)
+🎥 [Video](https://www.youtube.com/watch?v=vnvcKtHHMVQ)
 
-📖[Notebook](https://scicloj.github.io/noj-v2-getting-started/)
+📖 [Notebook](https://scicloj.github.io/noj-v2-getting-started/)
 
-💾[Data source - the Clojure Calendar Feed](https://clojureverse.org/t/the-clojure-events-calendar-feed-turns-2/)
+💾 [Data source - the Clojure Calendar Feed](https://clojureverse.org/t/the-clojure-events-calendar-feed-turns-2/)
 
 ## License
 
