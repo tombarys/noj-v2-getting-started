@@ -13,6 +13,9 @@
 (defonce feed-string
   (slurp "https://www.clojurians-zulip.org/feeds/events.ics"))
 
+(kind/hiccup 
+ [:svg [:circle {:r 50 :fill "green" :cx 100 :cy 100}]])
+
 ;; ## Initial exploration
 
 (kind/hiccup
