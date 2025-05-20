@@ -1,6 +1,7 @@
 (ns testuju 
   (:require
-    [scicloj.kindly.v4.kind :as kind]))
+    [scicloj.kindly.v4.kind :as kind]
+    [tech.v3.dataset :as ds]))
 (require '[scicloj.kindly.v4.kind :as kind]
          '[scicloj.metamorph.ml :as ml]
          '[java-time.api :as jt]
@@ -36,18 +37,21 @@
 
 (def end-date (jt/local-date 2025 3 1))
 
-
-;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
-;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
 (defn months-on-market [date]
   (when-let [days (when date (jt/time-between date end-date :days))]
     (long (Math/round (/ days 30.4375)))))
 
+;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
 (def ds+kategorie
   (-> raw-ds
       (tc/add-column :Tloustka (cat-tloustka raw-ds))
       (tc/add-column :Na_trhu (map months-on-market
-                                   (ds/column raw-ds "Datum_zahajeni_prodeje")))))
+                                   (ds/column raw-ds "Datum_zahajeni_prodeje")))
+      (ds/map-columns :Mesicni_prodej
+                      [:Celkovy_prodej_KS :Na_trhu]
+                      (fn [prodej na-trhu]
+                        (when (and na-trhu (pos? na-trhu))
+                          (/ prodej na-trhu))))))
 
 
 (tc/info ds+kategorie)
