@@ -43,15 +43,14 @@
 
 ;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
 (def ds+kategorie
-  (-> raw-ds
-      (tc/add-column :Tloustka (cat-tloustka raw-ds))
-      (tc/add-column :Na_trhu (map months-on-market
-                                   (ds/column raw-ds "Datum_zahajeni_prodeje")))
-      (ds/map-columns :Mesicni_prodej
-                      [:Celkovy_prodej_KS :Na_trhu]
-                      (fn [prodej na-trhu]
-                        (when (and na-trhu (pos? na-trhu))
-                          (/ prodej na-trhu))))))
+  (let [ds+ (-> raw-ds
+                (tc/add-column :Tloustka (cat-tloustka raw-ds))
+                (tc/add-column :Na_trhu (map months-on-market
+                                             (ds/column raw-ds "Datum_zahajeni_prodeje"))))]
+    (tc/add-column ds+ :Mesicni_prodej
+                   (map (fn [prodej na-trhu] (/ prodej na-trhu))
+                        (ds/column ds+ "Celkovy_prodej_KS")
+                        (ds/column ds+ :Na_trhu)))))
 
 
 (tc/info ds+kategorie)
