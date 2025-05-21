@@ -5,6 +5,7 @@
    [java-time.api :as jt]
    [tech.v3.dataset :as ds]
    [tablecloth.api :as tc]
+   [tablecloth.column.api.column :as tcc]
    [clojure.math :as math]
    [scicloj.metamorph.ml.toydata :as toydata]
    [scicloj.metamorph.ml :as ml]
@@ -63,29 +64,40 @@
 ;; ## Začátek zpracování 
 
 (def ds+kategorie
-  (let [ds+ (-> raw-ds
-                (tc/add-column :Tloustka (cat-tloustka raw-ds))
-                (tc/add-column :Cenova_kategorie (cat-cena raw-ds))
-                (tc/add-column :Na_trhu (map months-on-market (ds/column raw-ds :Datum_zahajeni_prodeje))))
-        ds+ (-> ds+
-                (tc/add-column :Mesicni_prodej_KS (map (fn [prodej na-trhu] (math/round (/ prodej na-trhu)))
-                                                       (ds/column ds+ :Celkovy_prodej_KS)
-                                                       (ds/column ds+ :Na_trhu)))
-                (tc/add-column :Prodejnost cat-prodejnost ds+))]
-    (tc/drop-columns ds+ [:KS_papir :KS_e-kniha :KS_audiokniha :Trzby_papir :Trzby_e-kniha :Trzby_audiokniha
-                          :DPC_e-kniha :DPC_audiokniha :Datum_zahajeni_prodeje
-                          #_:Titul_knihy :Podtitul :Na_trhu :Mesicni_trzby :Pocet_stran
-                          :Celkovy_prodej_trzby #_:Celkovy_prodej_KS :Edice #_:Mesicni_prodej_KS])))
-
+  (as-> raw-ds %
+    (tc/add-column % :Tloustka (cat-tloustka raw-ds))
+    (tc/add-column % :Cenova_kategorie (cat-cena raw-ds))
+    (tc/add-column % :Na_trhu (map months-on-market (ds/column raw-ds :Datum_zahajeni_prodeje)))
+    (tc// % :Mesicni_prodej_KS [:Celkovy_prodej_KS :Na_trhu])
+    (tc/round % :Mesicni_prodej_KS :Mesicni_prodej_KS)
+    (tc/convert-types % :DPC_papir :float64)
+    (tc/add-column % :Prodejnost (cat-prodejnost %))))
 
 ;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
 (plotly/layer-point ds+kategorie {:=x :Prodejnost
                                   :=y :Mesicni_prodej_KS
                                   :=text :Titul_knihy})
 
+(plotly/splom ds+kategorie {:=colnames [:Tloustka :Mesicni_prodej_KS :Prodejnost]
+                            :=color :Tloustka
+                            :=text :Titul_knihy})
+ 
+
+(kind/table
+ (map meta (tc/columns ds+kategorie)))
+
 (tc/info ds+kategorie)
 
 (tc/head ds+kategorie)
 
-#_(tc/info ds :columns)
+(def ds-kategorie
+  (tc/drop-columns ds+kategorie [:KS_papir :KS_e-kniha :KS_audiokniha :Trzby_papir :Trzby_e-kniha :Trzby_audiokniha
+                        :DPC_e-kniha :DPC_audiokniha :Datum_zahajeni_prodeje
+                        :Titul_knihy :Podtitul :Na_trhu :Mesicni_trzby :Pocet_stran
+                        :Celkovy_prodej_trzby :Celkovy_prodej_KS :Edice :Mesicni_prodej_KS]))
 
+(tc/convert-types ds-kategorie :DPC_papir :float64)
+
+(tcc/typeof (:DPC_papir ds-kategorie))
+
+(tc/info ds-kategorie :columns)
