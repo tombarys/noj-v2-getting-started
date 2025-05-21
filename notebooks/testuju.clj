@@ -4,14 +4,20 @@
    [scicloj.tableplot.v1.plotly :as plotly]
    [java-time.api :as jt]
    [tech.v3.dataset :as ds]
+   [tech.v3.dataset.categorical :as ds-cat]
    [tablecloth.api :as tc]
+   [clojure.string :as str]
+   [scicloj.ml.tribuo :as tribuo]
    [tablecloth.column.api.column :as tcc]
    [clojure.math :as math]
    [scicloj.metamorph.ml.toydata :as toydata]
    [scicloj.metamorph.ml :as ml]
+   [scicloj.metamorph.ml.classification :as classification]
+   [scicloj.metamorph.ml.loss :as loss]
    [scicloj.metamorph.core :as mm]
    [tech.v3.dataset.column-filters :as ds-cf]
    [tech.v3.dataset.modelling :as ds-mod]
+
    [libpython-clj2.python :refer [py. py.-] :as py]))
 
 ; ## Inicializace datasetu
@@ -37,14 +43,14 @@
        (ds/column ds :Pocet_stran)))
 
 (defn cat-cena [ds]
-  (map #(cond 
+  (map #(cond
           (< % 299) "pod 299"
           (< % 399) "od 300 do 399"
           (< % 499) "od 400 do 499"
           :else "500 a víc")
        (ds/column ds :DPC_papir)))
 
-(defn cat-prodejnost 
+(defn cat-prodejnost
   "Vrací sloupec :Mesicni_prodej_KS"
   [ds]
   (map #(if (number? %)
@@ -71,7 +77,8 @@
     (tc// % :Mesicni_prodej_KS [:Celkovy_prodej_KS :Na_trhu])
     (tc/round % :Mesicni_prodej_KS :Mesicni_prodej_KS)
     (tc/convert-types % :DPC_papir :float64)
-    (tc/add-column % :Prodejnost (cat-prodejnost %))))
+    (tc/add-column % :Prodejnost (cat-prodejnost %))
+    (tc/convert-types % [:Tloustka :Barevnost :Cesky_autor :Tema :Cenova_kategorie] :categorical)))
 
 ;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
 (plotly/layer-point ds+kategorie {:=x :Prodejnost
@@ -81,7 +88,7 @@
 (plotly/splom ds+kategorie {:=colnames [:Tloustka :Mesicni_prodej_KS :Prodejnost]
                             :=color :Tloustka
                             :=text :Titul_knihy})
- 
+
 
 (kind/table
  (map meta (tc/columns ds+kategorie)))
@@ -92,12 +99,135 @@
 
 (def ds-kategorie
   (tc/drop-columns ds+kategorie [:KS_papir :KS_e-kniha :KS_audiokniha :Trzby_papir :Trzby_e-kniha :Trzby_audiokniha
-                        :DPC_e-kniha :DPC_audiokniha :Datum_zahajeni_prodeje
-                        :Titul_knihy :Podtitul :Na_trhu :Mesicni_trzby :Pocet_stran
-                        :Celkovy_prodej_trzby :Celkovy_prodej_KS :Edice :Mesicni_prodej_KS]))
+                                 :DPC_e-kniha :DPC_audiokniha :Datum_zahajeni_prodeje
+                                 :Titul_knihy :Podtitul :Na_trhu :Mesicni_trzby :Pocet_stran
+                                 :Celkovy_prodej_trzby :Celkovy_prodej_KS :Edice :Mesicni_prodej_KS :DPC_papir]))
 
-(tc/convert-types ds-kategorie :DPC_papir :float64)
 
-(tcc/typeof (:DPC_papir ds-kategorie))
+#_(tcc/typeof (:DPC_papir ds-kategorie))
 
-(tc/info ds-kategorie :columns)
+#_(tc/info ds-kategorie :columns)
+
+(ds/columns ds-kategorie)
+
+
+(map
+ #(hash-map
+   :col-name %
+   :values  (distinct (get ds-kategorie %)))
+ (ds/column-names ds-kategorie))
+
+;; ## Fitování modelu
+
+#_(def relevant-melvil-data
+  (-> ds-kategorie
+      (tc/select-columns :all)
+      (tc/drop-missing)
+      (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
+      (ds-mod/set-inference-target :Prodejnost)))
+
+(kind/dataset relevant-melvil-data)
+
+#_(def cat-maps
+  [(ds-cat/fit-categorical-map relevant-melvil-data :Tloustka ["normal" "nadnormal" "bichle"] :float64)
+   (ds-cat/fit-categorical-map relevant-melvil-data :Barevnost ["Barevná" "Černobílá" "Dvoubarva" "Černobílá s barevnou vsádkou"] :float64)
+   (ds-cat/fit-categorical-map relevant-melvil-data :Tema ["Podnikání"
+                                                           "Vzdělávání a výchova"
+                                                           "Produktivita"
+                                                           "Psychologie"
+                                                           "Zdraví"
+                                                           "Budoucnost"
+                                                           "Hvězdné příběhy"
+                                                           "Historie"
+                                                           "Ekologie"
+                                                           "psychologie"] :float64)
+   (ds-cat/fit-categorical-map relevant-melvil-data :Cesky_autor ["ano" "ne"] :float64)
+   (ds-cat/fit-categorical-map relevant-melvil-data :Vazba ["Měkká V4" "Měkká V2 s chlopněmi" "Měkká V2" "Pevná bez přebalu V8" "Pevná s přebalem V8"] :float64)
+   (ds-cat/fit-categorical-map relevant-melvil-data :Cenova_kategorie ["pod 299" "od 300 do 399" "od 400 do 499" "500 a víc"] :float64)])
+
+#_(kind/map cat-maps)
+
+#_(def numeric-melvil-data
+  (reduce (fn [ds cat-map]
+            (ds-cat/transform-categorical-map ds cat-map))
+          relevant-melvil-data
+          cat-maps))
+
+
+(def numeric-melvil-data2
+  (-> ds-kategorie
+      (tc/drop-missing)  
+      (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
+      (ds/categorical->one-hot [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
+      (tc/rename-columns :all (fn [col-name] (keyword (clojure.string/replace (name col-name) #"-" "_"))))
+      (ds-mod/set-inference-target :Prodejnost)))
+
+#_(ds/column-names numeric-melvil-data2)
+
+;; Pak teprve rozděl na trénovací a testovací sadu
+(def split
+  (first
+   (tc/split->seq numeric-melvil-data2 :holdout {:seed 112723})))
+
+
+(second split)
+;; 3. Použij to pro trénink modelu
+(def rf-model
+  (ml/train (:train split)
+            {:model-type :scicloj.ml.tribuo/classification
+             :tribuo-components [{:name "random-forest"
+                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                                  :properties {:maxDepth "8"
+                                               :useRandomSplitPoints "false"
+                                               :fractionFeaturesInSplit "0.5"}}]
+             :tribuo-trainer-name "random-forest"}))
+;; We start with a dummy model, which simply predicts the majority class.
+(def dummy-model (ml/train (:train split)
+                           {:model-type :metamorph.ml/dummy-classifier}))
+
+(def dummy-prediction
+  (ml/predict (:test split) dummy-model))
+
+(-> dummy-prediction :Prodejnost frequencies)
+
+(loss/classification-accuracy
+ (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
+ (:Prodejnost (ds-cat/reverse-map-categorical-xforms dummy-prediction)))
+
+
+(def rf-model
+  (ml/train (:train split)
+            {:model-type :scicloj.ml.tribuo/classification
+             :tribuo-components [{:name "random-forest"
+                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                                  :properties {:maxDepth "8"
+                                               :useRandomSplitPoints "false"
+                                               :fractionFeaturesInSplit "0.5"}}]
+             :tribuo-trainer-name "random-forest"}))
+
+
+(def rf-prediction
+  (ml/predict (:test split) rf-model))
+
+(-> rf-prediction
+    (tc/head)
+    (tc/rows))
+
+(loss/classification-accuracy
+ (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
+ (:Prodejnost (ds-cat/reverse-map-categorical-xforms rf-prediction)))
+
+(def pipeline
+  (mm/pipeline
+   (ds/categorical->one-hot ds-kategorie
+                            [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
+   #_(ds/categorical->number ds-kategorie :Prodejnost)
+   #_(ds-cat/fit-one-hot ds-kategorie :Prodejnost)
+   #_(ml/model {:model-type :random-forest
+                :target-column :Prodejnost  ;; sloupec, který předpovídáme
+                :options {:n-estimators 100
+                          :max-depth 10}})))
+
+
+;; ### Zjištění dostupných modelů
+(keys (ns-publics 'scicloj.metamorph.core))
