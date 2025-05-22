@@ -126,7 +126,7 @@
       (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
       (ds-mod/set-inference-target :Prodejnost)))
 
-(kind/dataset relevant-melvil-data)
+#_(kind/dataset relevant-melvil-data)
 
 #_(def cat-maps
   [(ds-cat/fit-categorical-map relevant-melvil-data :Tloustka ["normal" "nadnormal" "bichle"] :float64)
