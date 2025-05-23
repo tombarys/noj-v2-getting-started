@@ -18,7 +18,7 @@
    [tech.v3.dataset.column-filters :as ds-cf]
    [tech.v3.dataset.modelling :as ds-mod]
    [libpython-clj2.python :refer [py. py.-] :as py])
-   (:import [java.text Normalizer Normalizer$Form]))
+  (:import [java.text Normalizer Normalizer$Form]))
 
 
 
@@ -26,56 +26,14 @@
 
 (defonce raw-ds (tc/dataset "/Users/tomas/Downloads/melvil2.csv" {:key-fn keyword :separator \tab}))
 
-#_(ns-unmap *ns* 'raw-ds)
+; (ns-unmap *ns* 'raw-ds)
 
-(kind/hiccup
- [:div {:style {:max-height "400px"
-                :overflow-y :auto}}
-  (kind/table
-   raw-ds)])
-
-
-; ## Pomocné funkce pro kategorizaci
-
-(defn cat-tloustka [ds]
-  (map #(cond
-          (< % 300) "normal"
-          (< % 450) "nadnormal"
-          :else "bichle")
-       (ds/column ds :Pocet_stran)))
-
-(defn cat-cena [ds]
-  (map #(cond
-          (< % 299) "pod 299"
-          (< % 399) "od 300 do 399"
-          (< % 499) "od 400 do 499"
-          :else "500 a víc")
-       (ds/column ds :DPC_papir)))
-
-(defn cat-prodejnost
-  "Vrací sloupec :Mesicni_prodej_KS"
-  [ds]
-  (map #(if (number? %)
-          (cond
-            (< % 50) "underperformer"
-            (< % 412) "normal"
-            :else "bestseller")
-          :na)
-       (ds/column ds :Mesicni_prodej_KS)))
-
-(def end-date (jt/local-date 2025 3 1))
-
-(defn months-on-market [date]
-  (when-let [days (when date (jt/time-between date end-date :days))]
-    (long (Math/round (/ days 30.4375)))))
-
-;; ## Pomocné funkce pro zpracování dat
-
+;; ## Pomocné funkce pro sanitizaci názvů sloupců
 
 (defn sanitize-name-str [s]
   (if-not (and (nil? s) (empty? s))
-    (let [no-hyphens (str/replace s #"-" "_")
-          nfd-normalized (Normalizer/normalize no-hyphens Normalizer$Form/NFD)
+    (let [hyphens (str/replace s #"_" "-")
+          nfd-normalized (Normalizer/normalize hyphens Normalizer$Form/NFD)
           no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "")
           ;; Můžete přidat další pravidla, např. odstranění speciálních znaků
           ;; alphanumeric-and-underscore (str/replace no-diacritics #"[^a-zA-Z0-9_]" "")
@@ -83,140 +41,197 @@
       lower-cased)
     s))
 
+
+; ## Pomocné funkce pro kategorizaci
+
+(kind/hiccup
+ [:div {:style {:max-height "600px"
+                :overflow-y :auto}}
+  (kind/table
+   raw-ds)])
+
+(defn cat-tloustka [ds]
+  (map #(cond
+          (< % 300) "normal"
+          (< % 450) "nadnormal"
+          :else "bichle")
+       (ds/column ds :pocet-stran)))
+
+(defn cat-cena [ds]
+  (map #(cond
+          (< % 299) "pod 299"
+          (< % 399) "od 300 do 399"
+          (< % 499) "od 400 do 499"
+          :else "500 a vic")
+       (ds/column ds :dpc-papir)))
+
+(defn cat-prodejnost
+  "Vrací sloupec :mesicni-prodej-ks"
+  [ds]
+  (map #(if (number? %)
+          (cond
+            (< % 50) "underperformer"
+            (< % 412) "normal"
+            :else "bestseller")
+          :na)
+       (ds/column ds :mesicni-prodej-ks)))
+
+(def end-date (jt/local-date 2025 3 1))
+
+;; ## Pomocné funkce pro zpracování dat
+
+
+(defn months-on-market [date]
+  (when-let [days (when date (jt/time-between date end-date :days))]
+    (long (Math/round (/ days 30.4375)))))
+
 ;; ## Začátek zpracování 
 
-(def ds+kategorie
+
+(ds/head
+ (as-> raw-ds %
+   (tc/rename-columns % :all (fn [col] (if col (keyword (sanitize-name-str (name col))) col)))
+   (tc/update-columns % [:titul-knihy :podtitul :vazba :barevnost :edice :tema :cenova-kategorie :tloustka]
+                      (fn [column-data]
+                        (map sanitize-name-str column-data)))
+   (tc/add-column % :tloustka (cat-tloustka %))))
+
+(def ds-cleaned
   (as-> raw-ds %
-    (tc/add-column % :Tloustka (cat-tloustka raw-ds))
-    (tc/add-column % :Cenova_kategorie (cat-cena raw-ds))
-    (tc/add-column % :Na_trhu (map months-on-market (ds/column raw-ds :Datum_zahajeni_prodeje)))
-    (tc// % :Mesicni_prodej_KS [:Celkovy_prodej_KS :Na_trhu])
-    (tc/round % :Mesicni_prodej_KS :Mesicni_prodej_KS)
-    (tc/convert-types % :DPC_papir :float64)
-    (tc/add-column % :Prodejnost (cat-prodejnost %))
-    (tc/convert-types % [:Tloustka :Barevnost :Cesky_autor :Tema :Cenova_kategorie] :categorical)))
+    (tc/rename-columns % :all (fn [col] (if col (keyword (sanitize-name-str (name col))) col)))
+    (tc/update-columns % [:titul-knihy :podtitul :vazba :barevnost :edice :tema :cenova-kategorie :tloustka]
+                    (fn [column-data]
+                      (map sanitize-name-str column-data)))
+    (tc/add-column % :tloustka (cat-tloustka %))
+    (tc/add-column % :cenova-kategorie (cat-cena %))
+    (tc/add-column % :na-trhu (map months-on-market (ds/column raw-ds :Datum_zahajeni_prodeje)))
+    (tc// % :mesicni-prodej-ks [:celkovy-prodej-ks :na-trhu])
+    (tc/round % :mesicni-prodej-ks :mesicni-prodej-ks)
+    (tc/convert-types % :dpc-papir :float64)
+    (tc/add-column % :prodejnost (cat-prodejnost %))
+    (tc/convert-types % [:tloustka :barevnost :cesky-autor :tema :cenova-kategorie] :categorical)))
+
+ds-cleaned
+
+
+(def ds-kategorie
+  (tc/drop-columns ds-cleaned [:ks-papir :ks-e-kniha :ks-audiokniha :trzby-papir :trzby-e-kniha :trzby-audiokniha
+                               :dpc-e-kniha :dpc-audiokniha :datum-zahajeni-prodeje
+                               :titul-knihy :podtitul :na-trhu :mesicni-trzby :pocet-stran
+                               :celkovy-prodej-trzby :celkovy-prodej-ks :edice :mesicni-prodej-ks :dpc-papir]))
+
+ds-kategorie
+
 
 ;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
-(plotly/layer-point ds+kategorie {:=x :Prodejnost
-                                  :=y :Mesicni_prodej_KS
-                                  :=text :Titul_knihy})
+(plotly/layer-point ds-cleaned {:=x :prodejnost
+                                :=y :mesicni-prodej-ks
+                                :=text :titul-knihy})
 
-(plotly/splom ds+kategorie {:=colnames [:Tloustka :Mesicni_prodej_KS :Prodejnost]
-                            :=color :Tloustka
-                            :=text :Titul_knihy})
+(plotly/splom ds-cleaned {:=colnames [:tloustka :mesicni-prodej-ks :prodejnost]
+                          :=color :tloustka
+                          :=text :titul-knihy})
 
 
 (kind/table
- (map meta (tc/columns ds+kategorie)))
+ (map meta (tc/columns ds-cleaned)))
 
-(tc/info ds+kategorie)
+(tc/info ds-cleaned)
 
-(tc/head ds+kategorie)
+(tc/head ds-cleaned)
 
-(def ds-kategorie
-  (tc/drop-columns ds+kategorie [:KS_papir :KS_e-kniha :KS_audiokniha :Trzby_papir :Trzby_e-kniha :Trzby_audiokniha
-                                 :DPC_e-kniha :DPC_audiokniha :Datum_zahajeni_prodeje
-                                 :Titul_knihy :Podtitul :Na_trhu :Mesicni_trzby :Pocet_stran
-                                 :Celkovy_prodej_trzby :Celkovy_prodej_KS :Edice :Mesicni_prodej_KS :DPC_papir]))
-
-
-#_(tcc/typeof (:DPC_papir ds-kategorie))
+#_(tcc/typeof (:dpc_papir ds-kategorie))
 
 #_(tc/info ds-kategorie :columns)
 
-(ds/columns ds-kategorie)
+(ds/column-names ds-kategorie)
 
 
-(map
+#_(map
  #(hash-map
    :col-name %
    :values  (distinct (get ds-kategorie %)))
  (ds/column-names ds-kategorie))
 
-
-;; ## Testování a debug
-
-
-(def relevant-test-data
+;;;;
+(def numeric-melvil-data2
   (-> ds-kategorie
-      (tc/select-columns :all)
       (tc/drop-missing)
-      (tc/rename-columns :all #(if %
-                                 (keyword (sanitize-name-str (name %)))
-                                 %))
-      (tc/add-column :vazba1 #(sanitize-name-str %))
-      
-      #_(ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
-      #_(ds-mod/set-inference-target :Prodejnost)))
+      (ds/categorical->number [:prodejnost] ["underperformer" "normal" "bestseller"] :float64)
+      (ds/categorical->one-hot [:tloustka :barevnost :tema :cesky-autor :vazba :cenova-kategorie])
+      (ds-mod/set-inference-target :prodejnost)))
 
-(kind/dataset relevant-test-data)
+(def split
+  (first
+   (tc/split->seq numeric-melvil-data2 :holdout {:seed 112723})))
 
-;; ## Fitování modelu
-#_(def cat-maps
-  [(ds-cat/fit-categorical-map relevant-melvil-data :Tloustka ["normal" "nadnormal" "bichle"] :float64)
-   (ds-cat/fit-categorical-map relevant-melvil-data :Barevnost ["Barevná" "Černobílá" "Dvoubarva" "Černobílá s barevnou vsádkou"] :float64)
-   (ds-cat/fit-categorical-map relevant-melvil-data :Tema ["Podnikání"
-                                                           "Vzdělávání a výchova"
-                                                           "Produktivita"
-                                                           "Psychologie"
-                                                           "Zdraví"
-                                                           "Budoucnost"
-                                                           "Hvězdné příběhy"
-                                                           "Historie"
-                                                           "Ekologie"
-                                                           "psychologie"] :float64)
-   (ds-cat/fit-categorical-map relevant-melvil-data :Cesky_autor ["ano" "ne"] :float64)
-   (ds-cat/fit-categorical-map relevant-melvil-data :Vazba ["Měkká V4" "Měkká V2 s chlopněmi" "Měkká V2" "Pevná bez přebalu V8" "Pevná s přebalem V8"] :float64)
-   (ds-cat/fit-categorical-map relevant-melvil-data :Cenova_kategorie ["pod 299" "od 300 do 399" "od 400 do 499" "500 a víc"] :float64)])
-
-#_(kind/map cat-maps)
-
-#_(def numeric-melvil-data
-  (reduce (fn [ds cat-map]
-            (ds-cat/transform-categorical-map ds cat-map))
-          relevant-melvil-data
-          cat-maps))
+(def split-fixed
+  {:train (ds-mod/set-inference-target (:train split) :prodejnost)
+   :test (ds-mod/set-inference-target (:test split) :prodejnost)})
 
 
-;; (def numeric-melvil-data2
-;;   (let [target-col-original-name :Prodejnost ;; Název cílového sloupce před sanitizací
-;;         ;; Sanitizovaný název cílového sloupce, který budeme používat v set-inference-target
-;;         target-col-sanitized-keyword (keyword (sanitize-column-name-str target-col-original-name))]
-;;     (-> ds-kategorie
-;;         (tc/drop-missing)
-;;         (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
-;;         (ds/categorical->one-hot [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
-;;         (tc/rename-columns :all #(if %
-;;                                    (keyword (sanitize-column-name-str (name %)))
-;;                                    %))
-;;         ;; Použijte sanitizovaný název cílového sloupce
-;;         (ds-mod/set-inference-target target-col-sanitized-keyword))))
+;; Now train the model with the properly configured dataset
+(def rf-model
+  (ml/train split
+            {:model-type :scicloj.ml.tribuo/classification
+             :target-column :prodejnost
+             :tribuo-components [{:name "random-forest"
+                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                                  :properties {:maxDepth "8"
+                                               :useRandomSplitPoints "false"
+                                               :fractionFeaturesInSplit "0.5"}}]
+             :tribuo-trainer-name "random-forest"}))
 
-;; (ds/column-names numeric-melvil-data2)
-;; (-> numeric-melvil-data2 meta :tech.v3.dataset/target-column)
+;; Make predictions on the test set
+(def rf-predictions
+  (ml/predict (:test split-fixed) rf-model))
 
-;; #_(ds/column-names numeric-melvil-data2)
+;; Evaluate accuracy
+(def accuracy
+  (loss/classification-accuracy
+   (ds/column (:test split-fixed) :prodejnost)
+   (ds/column rf-predictions :prodejnost)))
 
-;; ;; Pak teprve rozděl na trénovací a testovací sadu
-;; (def split
-;;   (first
-;;    (tc/split->seq numeric-melvil-data2 :holdout {:seed 112723})))
+(println "Random Forest Accuracy:" accuracy)
+
+;; Let's examine everything about the training dataset
+(let [train-ds (:train test)]
+  (println "=== COMPREHENSIVE DATASET ANALYSIS ===")
+  (println "Dataset type:" (type train-ds))
+  (println "Dataset shape:" (ds/shape train-ds))
+  (println "Column count:" (ds/column-count train-ds))
+  (println "Row count:" (ds/row-count train-ds))
+  
+  (println "\n=== COLUMN NAMES ANALYSIS ===")
+  (let [col-names (ds/column-names train-ds)]
+    (println "Column names type:" (type col-names))
+    (println "Column names count:" (count col-names))
+    (println "First 5 columns:" (take 5 col-names))
+    (println "Contains :tloustka-normal?" (contains? (set col-names) :tloustka-normal))
+    (println "Contains :prodejnost?" (contains? (set col-names) :prodejnost)))
+  
+  (println "\n=== METADATA ANALYSIS ===")
+  (let [metadata (meta train-ds)]
+    (println "Metadata keys:" (keys metadata))
+    (println "Target columns:" (:target-columns metadata))
+    (println "Target column:" (:target-column metadata)))
+  
+  (println "\n=== COLUMN ACCESS TEST ===")
+  (try
+    (println ":tloustka-normal sample:" (take 3 (ds/column train-ds :tloustka-normal)))
+    (catch Exception e
+      (println "Error accessing :tloustka-normal:" (.getMessage e))))
+  
+  (try
+    (println ":prodejnost sample:" (take 3 (ds/column train-ds :prodejnost)))
+    (catch Exception e
+      (println "Error accessing :prodejnost:" (.getMessage e)))))
 
 
-;; (second split)
-;; ;; 3. Použij to pro trénink modelu
-;; (def rf-model
-;;   (ml/train (:train split)
-;;             {:model-type :scicloj.ml.tribuo/classification
-;;              :tribuo-components [{:name "random-forest"
-;;                                   :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-;;                                   :properties {:maxDepth "8"
-;;                                                :useRandomSplitPoints "false"
-;;                                                :fractionFeaturesInSplit "0.5"}}]
-;;              :tribuo-trainer-name "random-forest"}))
-;; ;; We start with a dummy model, which simply predicts the majority class.
-;; (def dummy-model (ml/train (:train split)
-;;                            {:model-type :metamorph.ml/dummy-classifier}))
+
+
+(def dummy-model (ml/train (:train split)
+                           {:model-type :metamorph.ml/dummy-classifier}))
 
 ;; (def dummy-prediction
 ;;   (ml/predict (:test split) dummy-model))
