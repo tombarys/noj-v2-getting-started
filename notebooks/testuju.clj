@@ -24,6 +24,7 @@
 
 ; ## Inicializace datasetu
 
+(py/initialize!)
 (defonce raw-ds (tc/dataset "/Users/tomas/Downloads/melvil2.csv" {:key-fn keyword :separator \tab}))
 
 ; (ns-unmap *ns* 'raw-ds)
@@ -35,9 +36,10 @@
     (let [hyphens (str/replace s #"_" "-")
           nfd-normalized (Normalizer/normalize hyphens Normalizer$Form/NFD)
           no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "")
+          no-spaces (str/trim no-diacritics)
           ;; Můžete přidat další pravidla, např. odstranění speciálních znaků
           ;; alphanumeric-and-underscore (str/replace no-diacritics #"[^a-zA-Z0-9_]" "")
-          lower-cased (str/lower-case no-diacritics)]
+          lower-cased (str/lower-case no-spaces)]
       lower-cased)
     s))
 
@@ -170,112 +172,54 @@ ds-kategorie
    :test (ds-mod/set-inference-target (:test split) :prodejnost)})
 
 
-;; Now train the model with the properly configured dataset
-(def rf-model
-  (ml/train split
-            {:model-type :scicloj.ml.tribuo/classification
-             :target-column :prodejnost
-             :tribuo-components [{:name "random-forest"
-                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                                  :properties {:maxDepth "8"
-                                               :useRandomSplitPoints "false"
-                                               :fractionFeaturesInSplit "0.5"}}]
-             :tribuo-trainer-name "random-forest"}))
 
-;; Make predictions on the test set
-(def rf-predictions
-  (ml/predict (:test split-fixed) rf-model))
+(map meta (vals (:train split)))
+
+(meta split)
+
+(:train split-fixed)
+
+#_(keys (ns-publics 'scicloj.metamorph.ml.sklearn))
+
+;; ### Toto funguje
+
+;; Test základní ML bez složitých dependencies
+(def simple-test
+  (tc/dataset {:x [1 2 3 4 5]
+               :y ["a" "b" "a" "b" "a"]}))
+
+(def sample-split 
+  (first 
+   (tc/split->seq simple-test :holdout {:seed 112723})))
+
+(def simple-model
+  (ml/train (:train simple-test)
+            {:model-type :metamorph.ml/dummy-classifier
+             :target-column :y}))
+
+(println "Basic ML works:" (some? simple-model))
+
+;; Train with sklearn random forest instead
+(def sklearn-rf-model
+  (ml/train (:train split)
+            {:model-type :sklearn.ensemble/random-forest-classifier
+             :n-estimators 100
+             :max-depth 8
+             :random-state 42}))
+
+sklearn-rf-model
+
+(map meta (vals (:train split-fixed)))
+
+;; Make predictions
+(def sklearn-predictions
+  (ml/predict (:test split-fixed) sklearn-rf-model))
 
 ;; Evaluate accuracy
-(def accuracy
+(def sklearn-accuracy
   (loss/classification-accuracy
    (ds/column (:test split-fixed) :prodejnost)
-   (ds/column rf-predictions :prodejnost)))
+   (ds/column sklearn-predictions :prodejnost)))
 
-(println "Random Forest Accuracy:" accuracy)
+(println "Sklearn Random Forest Accuracy:" sklearn-accuracy)
 
-;; Let's examine everything about the training dataset
-(let [train-ds (:train test)]
-  (println "=== COMPREHENSIVE DATASET ANALYSIS ===")
-  (println "Dataset type:" (type train-ds))
-  (println "Dataset shape:" (ds/shape train-ds))
-  (println "Column count:" (ds/column-count train-ds))
-  (println "Row count:" (ds/row-count train-ds))
-  
-  (println "\n=== COLUMN NAMES ANALYSIS ===")
-  (let [col-names (ds/column-names train-ds)]
-    (println "Column names type:" (type col-names))
-    (println "Column names count:" (count col-names))
-    (println "First 5 columns:" (take 5 col-names))
-    (println "Contains :tloustka-normal?" (contains? (set col-names) :tloustka-normal))
-    (println "Contains :prodejnost?" (contains? (set col-names) :prodejnost)))
-  
-  (println "\n=== METADATA ANALYSIS ===")
-  (let [metadata (meta train-ds)]
-    (println "Metadata keys:" (keys metadata))
-    (println "Target columns:" (:target-columns metadata))
-    (println "Target column:" (:target-column metadata)))
-  
-  (println "\n=== COLUMN ACCESS TEST ===")
-  (try
-    (println ":tloustka-normal sample:" (take 3 (ds/column train-ds :tloustka-normal)))
-    (catch Exception e
-      (println "Error accessing :tloustka-normal:" (.getMessage e))))
-  
-  (try
-    (println ":prodejnost sample:" (take 3 (ds/column train-ds :prodejnost)))
-    (catch Exception e
-      (println "Error accessing :prodejnost:" (.getMessage e)))))
-
-
-
-
-(def dummy-model (ml/train (:train split)
-                           {:model-type :metamorph.ml/dummy-classifier}))
-
-;; (def dummy-prediction
-;;   (ml/predict (:test split) dummy-model))
-
-;; (-> dummy-prediction :Prodejnost frequencies)
-
-;; (loss/classification-accuracy
-;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
-;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms dummy-prediction)))
-
-
-;; (def rf-model
-;;   (ml/train (:train split)
-;;             {:model-type :scicloj.ml.tribuo/classification
-;;              :tribuo-components [{:name "random-forest"
-;;                                   :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-;;                                   :properties {:maxDepth "8"
-;;                                                :useRandomSplitPoints "false"
-;;                                                :fractionFeaturesInSplit "0.5"}}]
-;;              :tribuo-trainer-name "random-forest"}))
-
-
-;; (def rf-prediction
-;;   (ml/predict (:test split) rf-model))
-
-;; (-> rf-prediction
-;;     (tc/head)
-;;     (tc/rows))
-
-;; (loss/classification-accuracy
-;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
-;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms rf-prediction)))
-
-;; (def pipeline
-;;   (mm/pipeline
-;;    (ds/categorical->one-hot ds-kategorie
-;;                             [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
-;;    #_(ds/categorical->number ds-kategorie :Prodejnost)
-;;    #_(ds-cat/fit-one-hot ds-kategorie :Prodejnost)
-;;    #_(ml/model {:model-type :random-forest
-;;                 :target-column :Prodejnost  ;; sloupec, který předpovídáme
-;;                 :options {:n-estimators 100
-;;                           :max-depth 10}})))
-
-
-;; ### Zjištění dostupných modelů
-(keys (ns-publics 'scicloj.metamorph.core))
