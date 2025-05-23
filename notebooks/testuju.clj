@@ -24,7 +24,7 @@
 
 ; ## Inicializace datasetu
 
-(py/initialize!)
+
 (defonce raw-ds (tc/dataset "/Users/tomas/Downloads/melvil2.csv" {:key-fn keyword :separator \tab}))
 
 ; (ns-unmap *ns* 'raw-ds)
@@ -193,9 +193,9 @@ ds-kategorie
    (tc/split->seq simple-test :holdout {:seed 112723})))
 
 (def simple-model
-  (ml/train (:train simple-test)
-            {:model-type :metamorph.ml/dummy-classifier
-             :target-column :y}))
+  (ml/train (ds-mod/set-inference-target (:train sample-split) :y)
+            {:model-type :scicloj.ml.tribuo/classification}))
+
 
 (println "Basic ML works:" (some? simple-model))
 
