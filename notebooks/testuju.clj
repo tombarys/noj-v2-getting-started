@@ -17,8 +17,10 @@
    [scicloj.metamorph.core :as mm]
    [tech.v3.dataset.column-filters :as ds-cf]
    [tech.v3.dataset.modelling :as ds-mod]
+   [libpython-clj2.python :refer [py. py.-] :as py])
+   (:import [java.text Normalizer Normalizer$Form]))
 
-   [libpython-clj2.python :refer [py. py.-] :as py]))
+
 
 ; ## Inicializace datasetu
 
@@ -66,6 +68,20 @@
 (defn months-on-market [date]
   (when-let [days (when date (jt/time-between date end-date :days))]
     (long (Math/round (/ days 30.4375)))))
+
+;; ## Pomocné funkce pro zpracování dat
+
+
+(defn sanitize-name-str [s]
+  (if-not (and (nil? s) (empty? s))
+    (let [no-hyphens (str/replace s #"-" "_")
+          nfd-normalized (Normalizer/normalize no-hyphens Normalizer$Form/NFD)
+          no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "")
+          ;; Můžete přidat další pravidla, např. odstranění speciálních znaků
+          ;; alphanumeric-and-underscore (str/replace no-diacritics #"[^a-zA-Z0-9_]" "")
+          lower-cased (str/lower-case no-diacritics)]
+      lower-cased)
+    s))
 
 ;; ## Začátek zpracování 
 
@@ -117,17 +133,25 @@
    :values  (distinct (get ds-kategorie %)))
  (ds/column-names ds-kategorie))
 
-;; ## Fitování modelu
 
-#_(def relevant-melvil-data
+;; ## Testování a debug
+
+
+(def relevant-test-data
   (-> ds-kategorie
       (tc/select-columns :all)
       (tc/drop-missing)
-      (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
-      (ds-mod/set-inference-target :Prodejnost)))
+      (tc/rename-columns :all #(if %
+                                 (keyword (sanitize-name-str (name %)))
+                                 %))
+      (tc/add-column :vazba1 #(sanitize-name-str %))
+      
+      #_(ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
+      #_(ds-mod/set-inference-target :Prodejnost)))
 
-#_(kind/dataset relevant-melvil-data)
+(kind/dataset relevant-test-data)
 
+;; ## Fitování modelu
 #_(def cat-maps
   [(ds-cat/fit-categorical-map relevant-melvil-data :Tloustka ["normal" "nadnormal" "bichle"] :float64)
    (ds-cat/fit-categorical-map relevant-melvil-data :Barevnost ["Barevná" "Černobílá" "Dvoubarva" "Černobílá s barevnou vsádkou"] :float64)
@@ -154,79 +178,88 @@
           cat-maps))
 
 
-(def numeric-melvil-data2
-  (-> ds-kategorie
-      (tc/drop-missing)  
-      (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
-      (ds/categorical->one-hot [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
-      (tc/rename-columns :all (fn [col-name] (keyword (clojure.string/replace (name col-name) #"-" "_"))))
-      (ds-mod/set-inference-target :Prodejnost)))
+;; (def numeric-melvil-data2
+;;   (let [target-col-original-name :Prodejnost ;; Název cílového sloupce před sanitizací
+;;         ;; Sanitizovaný název cílového sloupce, který budeme používat v set-inference-target
+;;         target-col-sanitized-keyword (keyword (sanitize-column-name-str target-col-original-name))]
+;;     (-> ds-kategorie
+;;         (tc/drop-missing)
+;;         (ds/categorical->number [:Prodejnost] ["underperformer" "normal" "bestseller"] :float64)
+;;         (ds/categorical->one-hot [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
+;;         (tc/rename-columns :all #(if %
+;;                                    (keyword (sanitize-column-name-str (name %)))
+;;                                    %))
+;;         ;; Použijte sanitizovaný název cílového sloupce
+;;         (ds-mod/set-inference-target target-col-sanitized-keyword))))
 
-#_(ds/column-names numeric-melvil-data2)
+;; (ds/column-names numeric-melvil-data2)
+;; (-> numeric-melvil-data2 meta :tech.v3.dataset/target-column)
 
-;; Pak teprve rozděl na trénovací a testovací sadu
-(def split
-  (first
-   (tc/split->seq numeric-melvil-data2 :holdout {:seed 112723})))
+;; #_(ds/column-names numeric-melvil-data2)
 
-
-(second split)
-;; 3. Použij to pro trénink modelu
-(def rf-model
-  (ml/train (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "random-forest"
-                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                                  :properties {:maxDepth "8"
-                                               :useRandomSplitPoints "false"
-                                               :fractionFeaturesInSplit "0.5"}}]
-             :tribuo-trainer-name "random-forest"}))
-;; We start with a dummy model, which simply predicts the majority class.
-(def dummy-model (ml/train (:train split)
-                           {:model-type :metamorph.ml/dummy-classifier}))
-
-(def dummy-prediction
-  (ml/predict (:test split) dummy-model))
-
-(-> dummy-prediction :Prodejnost frequencies)
-
-(loss/classification-accuracy
- (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
- (:Prodejnost (ds-cat/reverse-map-categorical-xforms dummy-prediction)))
+;; ;; Pak teprve rozděl na trénovací a testovací sadu
+;; (def split
+;;   (first
+;;    (tc/split->seq numeric-melvil-data2 :holdout {:seed 112723})))
 
 
-(def rf-model
-  (ml/train (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "random-forest"
-                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                                  :properties {:maxDepth "8"
-                                               :useRandomSplitPoints "false"
-                                               :fractionFeaturesInSplit "0.5"}}]
-             :tribuo-trainer-name "random-forest"}))
+;; (second split)
+;; ;; 3. Použij to pro trénink modelu
+;; (def rf-model
+;;   (ml/train (:train split)
+;;             {:model-type :scicloj.ml.tribuo/classification
+;;              :tribuo-components [{:name "random-forest"
+;;                                   :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+;;                                   :properties {:maxDepth "8"
+;;                                                :useRandomSplitPoints "false"
+;;                                                :fractionFeaturesInSplit "0.5"}}]
+;;              :tribuo-trainer-name "random-forest"}))
+;; ;; We start with a dummy model, which simply predicts the majority class.
+;; (def dummy-model (ml/train (:train split)
+;;                            {:model-type :metamorph.ml/dummy-classifier}))
+
+;; (def dummy-prediction
+;;   (ml/predict (:test split) dummy-model))
+
+;; (-> dummy-prediction :Prodejnost frequencies)
+
+;; (loss/classification-accuracy
+;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
+;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms dummy-prediction)))
 
 
-(def rf-prediction
-  (ml/predict (:test split) rf-model))
+;; (def rf-model
+;;   (ml/train (:train split)
+;;             {:model-type :scicloj.ml.tribuo/classification
+;;              :tribuo-components [{:name "random-forest"
+;;                                   :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+;;                                   :properties {:maxDepth "8"
+;;                                                :useRandomSplitPoints "false"
+;;                                                :fractionFeaturesInSplit "0.5"}}]
+;;              :tribuo-trainer-name "random-forest"}))
 
-(-> rf-prediction
-    (tc/head)
-    (tc/rows))
 
-(loss/classification-accuracy
- (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
- (:Prodejnost (ds-cat/reverse-map-categorical-xforms rf-prediction)))
+;; (def rf-prediction
+;;   (ml/predict (:test split) rf-model))
 
-(def pipeline
-  (mm/pipeline
-   (ds/categorical->one-hot ds-kategorie
-                            [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
-   #_(ds/categorical->number ds-kategorie :Prodejnost)
-   #_(ds-cat/fit-one-hot ds-kategorie :Prodejnost)
-   #_(ml/model {:model-type :random-forest
-                :target-column :Prodejnost  ;; sloupec, který předpovídáme
-                :options {:n-estimators 100
-                          :max-depth 10}})))
+;; (-> rf-prediction
+;;     (tc/head)
+;;     (tc/rows))
+
+;; (loss/classification-accuracy
+;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms (:test split)))
+;;  (:Prodejnost (ds-cat/reverse-map-categorical-xforms rf-prediction)))
+
+;; (def pipeline
+;;   (mm/pipeline
+;;    (ds/categorical->one-hot ds-kategorie
+;;                             [:Tloustka :Barevnost :Tema :Cesky_autor :Vazba :Cenova_kategorie])
+;;    #_(ds/categorical->number ds-kategorie :Prodejnost)
+;;    #_(ds-cat/fit-one-hot ds-kategorie :Prodejnost)
+;;    #_(ml/model {:model-type :random-forest
+;;                 :target-column :Prodejnost  ;; sloupec, který předpovídáme
+;;                 :options {:n-estimators 100
+;;                           :max-depth 10}})))
 
 
 ;; ### Zjištění dostupných modelů
