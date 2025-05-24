@@ -37,14 +37,17 @@
             missing-cols)))
 
 (defn clean-one-hot-metadata [dataset]
-  (reduce (fn [ds col-name]
-            (let [col (ds/column ds col-name)
-                  old-meta (meta col)
-                  clean-meta (dissoc old-meta :one-hot-map :categorical-map)]
-              (ds/add-or-update-column ds col-name
-                                       (with-meta (vec col) clean-meta))))
-          dataset
-          (ds/column-names dataset)))
+  (reduce
+   (fn [ds col-name]
+     (ds/add-or-update-column ds col-name (vec (ds/column ds col-name))))
+   dataset
+   (ds/column-names dataset)))
+
+(kind/table 
+ (tc/info raw-ds))
+(kind/table 
+ (tc/info (clean-one-hot-metadata raw-ds)))
+
 
 (defn sanitize-name-str [s]
   (if-not (and (nil? s) (empty? s))
@@ -138,6 +141,7 @@
       (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
       (tc/drop-missing)
       clean-one-hot-metadata
+      (tc/update-columns [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie] vec)
       (ds-mod/set-inference-target [:prodejnost])))
 
 
