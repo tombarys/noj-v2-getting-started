@@ -50,79 +50,84 @@
 <link href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" rel="stylesheet" type="text/css" />
 <title>Clay</title></head><body data-spy="scroll" data-target="#toc" style="margin:auto;">
 <script src="testuju_files/html-default0.js" type="text/javascript"></script><script src="testuju_files/html-default1.js" type="text/javascript"></script><script src="testuju_files/katex2.js" type="text/javascript"></script>
-<div class="container"><div class="row"><div class="col-sm-12"><div><div><div style="margin:15px;"><details><summary><strong style="color: red;">An Exception Occurred!</strong><ul><li>Message: Syntax error macroexpanding at (NO_SOURCE_FILE:28:3).</li><li>Type: clojure.lang.Compiler$CompilerException</li><li>Thrown at: [clojure.lang.Compiler$InvokeExpr eval &quot;Compiler.java&quot; 4183]</li></ul><p>[+] <em>Expand for stacktrace.</em></p></summary><pre><code class="sourceCode language-clojure printed-clojure">
+<div class="container"><div class="row"><div class="col-sm-12"><div><div><div style="margin:15px;"><details><summary><strong style="color: red;">An Exception Occurred!</strong><ul><li>Message: Syntax error macroexpanding at (NO_SOURCE_FILE:187:3).</li><li>Type: clojure.lang.Compiler$CompilerException</li><li>Thrown at: [clojure.lang.Compiler$InvokeExpr eval &quot;Compiler.java&quot; 4183]</li></ul><p>[+] <em>Expand for stacktrace.</em></p></summary><pre><code class="sourceCode language-clojure printed-clojure">
 #error {
  :class   clojure.lang.Compiler$CompilerException
- :message "Syntax error macroexpanding at (NO_SOURCE_FILE:28:3)."
- :data    #:clojure.error{:phase :execution, :line 28, :column 3, :source "NO_SOURCE_FILE"}
+ :message "Syntax error macroexpanding at (NO_SOURCE_FILE:187:3)."
+ :data    #:clojure.error{:phase :execution, :line 187, :column 3, :source "NO_SOURCE_FILE"}
  :trace
- [[Compiler$InvokeExpr.eval                                "Compiler.java" 4183]
+ [[Compiler$InvokeExpr.eval                                        "Compiler.java" 4183]
   [...common-elements 35]]
  :cause
  #error {
-  :class   com.oracle.labs.mlrg.olcut.config.io.ConfigLoaderException
-  :message "java.lang.ClassCastException: class com.fasterxml.jackson.databind.node.NullNode cannot be cast to class com.fasterxml.jackson.databind.node.ArrayNode (com.fasterxml.jackson.databind.node.NullNode and com.fasterxml.jackson.databind.node.ArrayNode are in unnamed module of loader 'app')"
+  :class   java.lang.Exception
+  :message "Failed to find column :barevnost-dvoubarva"
   :trace
-  [[JsonLoader.parseJson                                   "JsonLoader.java" 193]
-   [...common-elements 52]]
-  :cause
-  #error {
-   :class   java.lang.ClassCastException
-   :message "class com.fasterxml.jackson.databind.node.NullNode cannot be cast to class com.fasterxml.jackson.databind.node.ArrayNode (com.fasterxml.jackson.databind.node.NullNode and com.fasterxml.jackson.databind.node.ArrayNode are in unnamed module of loader 'app')"
-   :trace
-   [[JsonLoader.parseJson                                  "JsonLoader.java" 161]
-    [JsonLoader.lambda$load$0                              "JsonLoader.java" 112]
-    [AccessController.doPrivileged                         "AccessController.java" 319]
-    [JsonLoader.load                                       "JsonLoader.java" 101]
-    [URLLoader.load                                        "URLLoader.java" 79]
-    [ConfigurationManager.<init>                           "ConfigurationManager.java" 397]
-    [ConfigurationManager.<init>                           "ConfigurationManager.java" 343]
-    [ConfigurationManager.<init>                           "ConfigurationManager.java" 321]
-    [ConfigurationManager.<init>                           "ConfigurationManager.java" 300]
-    [ConfigurationManager.<init>                           "ConfigurationManager.java" 232]
-    [tech.v3.libs.tribuo/trainer                           "tribuo.clj" 324]
-    [scicloj.ml.tribuo/make-trainer                        "tribuo.clj" 16]
-    [scicloj.ml.tribuo/train-classification                "tribuo.clj" 73]
-    [scicloj.metamorph.ml/train                            "ml.clj" 622]
-    [clojure.core/apply                                    "core.clj" 667]
-    [malli.core/-=-GT/reify/reify/fn                       "core.cljc" 1918]
-    [AFunction$1.doInvoke                                  "AFunction.java" 33]
-    [Compiler$InvokeExpr.eval                              "Compiler.java" 4178]
-    [Compiler$DefExpr.eval                                 "Compiler.java" 464]
-    [Compiler.eval                                         "Compiler.java" 7705]
-    [Compiler.eval                                         "Compiler.java" 7655]
-    [clojure.core/eval                                     "core.clj" 3232]
-    [scicloj.clay.v2.notebook/complete                     "notebook.clj" 49]
-    [scicloj.clay.v2.notebook/items-and-test-forms/fn      "notebook.clj" 295]
-    [ArrayChunk.reduce                                     "ArrayChunk.java" 65]
-    [clojure.core.protocols/fn                             "protocols.clj" 135]
-    [clojure.core.protocols/fn/G                           "protocols.clj" 19]
-    [clojure.core.protocols/seq-reduce                     "protocols.clj" 31]
-    [clojure.core.protocols/fn                             "protocols.clj" 74]
-    [clojure.core.protocols/fn/G                           "protocols.clj" 13]
-    [clojure.core/reduce                                   "core.clj" 6965]
-    [scicloj.clay.v2.notebook/items-and-test-forms         "notebook.clj" 290]
-    [scicloj.clay.v2.make/handle-single-source-spec!       "make.clj" 320]
-    [clojure.core/mapv/fn                                  "core.clj" 7059]
-    [ArrayChunk.reduce                                     "ArrayChunk.java" 60]
-    [clojure.core.protocols/fn                             "protocols.clj" 135]
-    [clojure.core.protocols/fn/G                           "protocols.clj" 19]
-    [clojure.core.protocols/seq-reduce                     "protocols.clj" 31]
-    [clojure.core.protocols/fn                             "protocols.clj" 74]
-    [clojure.core.protocols/fn/G                           "protocols.clj" 13]
-    [clojure.core/reduce                                   "core.clj" 6965]
-    [clojure.core/mapv                                     "core.clj" 7050]
-    [scicloj.clay.v2.make/make!                            "make.clj" 406]
-    [scicloj.clay.v2.api/make!                             "api.clj" 35]
-    [scicloj.clay.v2.snippets/make-ns!                     "snippets.clj" 38]
-    [scicloj.clay.v2.snippets/make-ns-html!                "snippets.clj" 46]
-    [testuju/eval]
-    [Compiler.eval                                         "Compiler.java" 7700]
-    [Compiler.eval                                         "Compiler.java" 7690]
-    [nrepl.middleware.interruptible-eval/evaluator/run/fn  "interruptible_eval.clj" 106]
-    [nrepl.middleware.interruptible-eval/evaluator/run     "interruptible_eval.clj" 101]
-    [nrepl.middleware.session/session-exec/session-loop    "session.clj" 230]
-    [SessionThread.run                                     "SessionThread.java" 21]]}}}</code></pre></details></div></div></div></div></div></div><script type="text/javascript">/*!
+  [[tech.v3.dataset.impl.dataset.Dataset/fn                        "dataset.clj" 299]
+   [Transformables$18.invoke                                       "Transformables.java" 307]
+   [PersistentVector.reduce                                        "PersistentVector.java" 418]
+   [Reductions.serialReduction                                     "Reductions.java" 95]
+   [Transformables.singleMapReduce                                 "Transformables.java" 316]
+   [Transformables$SingleMapList.reduce                            "Transformables.java" 988]
+   [Reductions.serialReduction                                     "Reductions.java" 95]
+   [Transformables$FilterIterable.reduce                           "Transformables.java" 718]
+   [MutList.addAllReducible                                        "MutList.java" 102]
+   [ham-fisted.api/mut-list                                        "api.clj" 547]
+   [ham-fisted.api/immut-list                                      "api.clj" 562]
+   [ham-fisted.api/vec                                             "api.clj" 1435]
+   [tech.v3.dataset.impl.dataset/new-dataset                       "dataset.clj" 500]
+   [tech.v3.dataset.impl.dataset.Dataset/select-columns            "dataset.clj" 301]
+   [tech.v3.dataset.base/select-columns                            "base.clj" 319]
+   [tech.v3.dataset.categorical/invert-one-hot-map                 "categorical.clj" 293]
+   [tech.v3.dataset.categorical/reverse-map-categorical-xforms/fn  "categorical.clj" 331]
+   [clojure.core.protocols/fn                                      "protocols.clj" 167]
+   [clojure.core.protocols/fn/G                                    "protocols.clj" 19]
+   [clojure.core.protocols/seq-reduce                              "protocols.clj" 31]
+   [clojure.core.protocols/fn                                      "protocols.clj" 74]
+   [clojure.core.protocols/fn/G                                    "protocols.clj" 13]
+   [clojure.core/reduce                                            "core.clj" 6965]
+   [tech.v3.dataset.categorical/reverse-map-categorical-xforms     "categorical.clj" 330]
+   [scicloj.metamorph.ml/assert-categorical-consistency            "ml.clj" 552]
+   [scicloj.metamorph.ml/train                                     "ml.clj" 599]
+   [clojure.core/apply                                             "core.clj" 667]
+   [malli.core/-=-GT/reify/reify/fn                                "core.cljc" 1918]
+   [AFunction$1.doInvoke                                           "AFunction.java" 33]
+   [Compiler$InvokeExpr.eval                                       "Compiler.java" 4178]
+   [Compiler$DefExpr.eval                                          "Compiler.java" 464]
+   [Compiler.eval                                                  "Compiler.java" 7705]
+   [Compiler.eval                                                  "Compiler.java" 7655]
+   [clojure.core/eval                                              "core.clj" 3232]
+   [scicloj.clay.v2.notebook/complete                              "notebook.clj" 49]
+   [scicloj.clay.v2.notebook/items-and-test-forms/fn               "notebook.clj" 295]
+   [ArrayChunk.reduce                                              "ArrayChunk.java" 65]
+   [clojure.core.protocols/fn                                      "protocols.clj" 135]
+   [clojure.core.protocols/fn/G                                    "protocols.clj" 19]
+   [clojure.core.protocols/seq-reduce                              "protocols.clj" 31]
+   [clojure.core.protocols/fn                                      "protocols.clj" 74]
+   [clojure.core.protocols/fn/G                                    "protocols.clj" 13]
+   [clojure.core/reduce                                            "core.clj" 6965]
+   [scicloj.clay.v2.notebook/items-and-test-forms                  "notebook.clj" 290]
+   [scicloj.clay.v2.make/handle-single-source-spec!                "make.clj" 320]
+   [clojure.core/mapv/fn                                           "core.clj" 7059]
+   [ArrayChunk.reduce                                              "ArrayChunk.java" 60]
+   [clojure.core.protocols/fn                                      "protocols.clj" 135]
+   [clojure.core.protocols/fn/G                                    "protocols.clj" 19]
+   [clojure.core.protocols/seq-reduce                              "protocols.clj" 31]
+   [clojure.core.protocols/fn                                      "protocols.clj" 74]
+   [clojure.core.protocols/fn/G                                    "protocols.clj" 13]
+   [clojure.core/reduce                                            "core.clj" 6965]
+   [clojure.core/mapv                                              "core.clj" 7050]
+   [scicloj.clay.v2.make/make!                                     "make.clj" 406]
+   [scicloj.clay.v2.api/make!                                      "api.clj" 35]
+   [scicloj.clay.v2.snippets/make-ns!                              "snippets.clj" 38]
+   [scicloj.clay.v2.snippets/make-ns-html!                         "snippets.clj" 46]
+   [testuju/eval]
+   [Compiler.eval                                                  "Compiler.java" 7700]
+   [Compiler.eval                                                  "Compiler.java" 7690]
+   [nrepl.middleware.interruptible-eval/evaluator/run/fn           "interruptible_eval.clj" 106]
+   [nrepl.middleware.interruptible-eval/evaluator/run              "interruptible_eval.clj" 101]
+   [nrepl.middleware.session/session-exec/session-loop             "session.clj" 230]
+   [SessionThread.run                                              "SessionThread.java" 21]]}}</code></pre></details></div></div></div></div></div></div><script type="text/javascript">/*!
   Highlight.js v11.9.0 (git: b7ec4bfafc)
   (c) 2006-2023 undefined and other contributors
   License: BSD-3-Clause
