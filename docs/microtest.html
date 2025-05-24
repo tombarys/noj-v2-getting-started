@@ -49,36 +49,32 @@
 </style>
 <link href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" rel="stylesheet" type="text/css" />
 <title>Clay</title></head><body data-spy="scroll" data-target="#toc" style="margin:auto;">
-<script src="testuju_files/html-default0.js" type="text/javascript"></script><script src="testuju_files/html-default1.js" type="text/javascript"></script><script src="testuju_files/katex2.js" type="text/javascript"></script>
-<div class="container"><div class="row"><div class="col-sm-12"><div><div><div style="margin:15px;"><details><summary><strong style="color: red;">An Exception Occurred!</strong><ul><li>Message: class clojure.lang.Keyword cannot be cast to class java.util.Map$Entry (clojure.lang.Keyword is in unnamed module of loader &apos;app&apos;; java.util.Map$Entry is in module java.base of loader &apos;bootstrap&apos;)</li><li>Type: java.lang.ClassCastException</li><li>Thrown at: [clojure.lang.APersistentMap$ValSeq first &quot;APersistentMap.java&quot; 239]</li></ul><p>[+] <em>Expand for stacktrace.</em></p></summary><pre><code class="sourceCode language-clojure printed-clojure">
+<script src="microtest_files/html-default0.js" type="text/javascript"></script><script src="microtest_files/html-default1.js" type="text/javascript"></script><script src="microtest_files/katex2.js" type="text/javascript"></script>
+<div class="container"><div class="row"><div class="col-sm-12"><div><div><div style="margin:15px;"><details><summary><strong style="color: red;">An Exception Occurred!</strong><ul><li>Message: Could not locate scicloj/ml/metamorph__init.class, scicloj/ml/metamorph.clj or scicloj/ml/metamorph.cljc on classpath.</li><li>Type: java.io.FileNotFoundException</li><li>Thrown at: [clojure.lang.RT load &quot;RT.java&quot; 482]</li></ul><p>[+] <em>Expand for stacktrace.</em></p></summary><pre><code class="sourceCode language-clojure printed-clojure">
 #error {
- :class   java.lang.ClassCastException
- :message "class clojure.lang.Keyword cannot be cast to class java.util.Map$Entry (clojure.lang.Keyword is in unnamed module of loader 'app'; java.util.Map$Entry is in module java.base of loader 'bootstrap')"
+ :class   java.io.FileNotFoundException
+ :message "Could not locate scicloj/ml/metamorph__init.class, scicloj/ml/metamorph.clj or scicloj/ml/metamorph.cljc on classpath."
  :trace
- [[APersistentMap$ValSeq.first                           "APersistentMap.java" 239]
-  [RT.first                                              "RT.java" 712]
-  [clojure.core/first                                    "core.clj" 55]
-  [clojure.core/some                                     "core.clj" 2718]
-  [scicloj.clay.v2.prepare/view-sequentially             "prepare.clj" 390]
-  [scicloj.clay.v2.prepare/eval/fn                       "prepare.clj" 425]
-  [scicloj.clay.v2.prepare/prepare                       "prepare.clj" 195]
-  [scicloj.clay.v2.prepare/prepare-or-pprint             "prepare.clj" 202]
-  [scicloj.clay.v2.prepare/view-sequentially/fn          "prepare.clj" 394]
-  [clojure.core/map/fn                                   "core.clj" 2772]
-  [LazySeq.force                                         "LazySeq.java" 50]
-  [LazySeq.realize                                       "LazySeq.java" 89]
-  [LazySeq.seq                                           "LazySeq.java" 106]
-  [RT.seq                                                "RT.java" 555]
-  [clojure.core/seq                                      "core.clj" 139]
-  [clojure.core/apply                                    "core.clj" 662]
-  [clojure.core/mapcat                                   "core.clj" 2800]
-  [scicloj.clay.v2.prepare/view-sequentially             "prepare.clj" 393]
-  [scicloj.clay.v2.prepare/eval/fn                       "prepare.clj" 425]
-  [scicloj.clay.v2.prepare/prepare                       "prepare.clj" 195]
-  [scicloj.clay.v2.prepare/prepare-or-pprint             "prepare.clj" 202]
-  [scicloj.clay.v2.notebook/note-to-items                "notebook.clj" 117]
-  [scicloj.clay.v2.notebook/items-and-test-forms/fn      "notebook.clj" 308]
-  [ArrayChunk.reduce                                     "ArrayChunk.java" 65]
+ [[RT.load                                               "RT.java" 482]
+  [RT.load                                               "RT.java" 444]
+  [clojure.core/load/fn                                  "core.clj" 6189]
+  [clojure.core/load                                     "core.clj" 6188]
+  [clojure.core/load-one                                 "core.clj" 5961]
+  [clojure.core/load-lib/fn                              "core.clj" 6003]
+  [clojure.core/load-lib                                 "core.clj" 6002]
+  [clojure.core/apply                                    "core.clj" 669]
+  [clojure.core/load-libs                                "core.clj" 6044]
+  [clojure.core/apply                                    "core.clj" 669]
+  [clojure.core/require                                  "core.clj" 6066]
+  [microtest/eval/loading--auto--]
+  [microtest/eval]
+  [Compiler.eval                                         "Compiler.java" 7700]
+  [Compiler.eval                                         "Compiler.java" 7689]
+  [Compiler.eval                                         "Compiler.java" 7655]
+  [clojure.core/eval                                     "core.clj" 3232]
+  [scicloj.clay.v2.notebook/complete                     "notebook.clj" 49]
+  [scicloj.clay.v2.notebook/items-and-test-forms/fn      "notebook.clj" 295]
+  [ArrayChunk.reduce                                     "ArrayChunk.java" 60]
   [clojure.core.protocols/fn                             "protocols.clj" 135]
   [clojure.core.protocols/fn/G                           "protocols.clj" 19]
   [clojure.core.protocols/seq-reduce                     "protocols.clj" 31]
@@ -100,7 +96,7 @@
   [scicloj.clay.v2.api/make!                             "api.clj" 35]
   [scicloj.clay.v2.snippets/make-ns!                     "snippets.clj" 38]
   [scicloj.clay.v2.snippets/make-ns-html!                "snippets.clj" 46]
-  [testuju/eval]
+  [microtest/eval]
   [Compiler.eval                                         "Compiler.java" 7700]
   [Compiler.eval                                         "Compiler.java" 7690]
   [nrepl.middleware.interruptible-eval/evaluator/run/fn  "interruptible_eval.clj" 106]

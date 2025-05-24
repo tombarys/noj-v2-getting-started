@@ -23,12 +23,21 @@
 
 ; ## Inicializace datasetu
 
-
  (defonce raw-ds (tc/dataset "/Users/tomas/Downloads/melvil2.csv" {:key-fn keyword :separator \tab}))
 
 ; (ns-unmap *ns* 'raw-ds)
 
  ;; ## Pomocné funkce pro sanitizaci názvů sloupců
+
+ (defn clean-one-hot-metadata [dataset]
+   (reduce (fn [ds col-name]
+             (let [col (ds/column ds col-name)
+                   old-meta (meta col)
+                   clean-meta (dissoc old-meta :one-hot-map :categorical-map)]
+               (ds/add-or-update-column ds col-name
+                                        (with-meta (vec col) clean-meta))))
+           dataset
+           (ds/column-names dataset)))
 
  (defn sanitize-name-str [s]
    (if-not (and (nil? s) (empty? s))
@@ -81,25 +90,24 @@
 
  ;; ## Pomocné funkce pro zpracování dat
 
-
  (defn months-on-market [date]
    (when-let [days (when date (jt/time-between date end-date :days))]
      (long (Math/round (/ days 30.4375)))))
 
- ;; ## Začátek zpracování 
+; ## Začátek zpracování 
 
 ; Vybere řádky, kde je nil v libovolném sloupci
  (tc/select-rows raw-ds (fn [row] (some nil? (vals row))))
 
  (def ds
    (as-> raw-ds %
-     (tc/select-rows % (range 10))
+     #_(tc/select-rows % (range 10))
      (tc/rename-columns % :all (fn [col] (if col (keyword (sanitize-name-str (name col))) col)))
      (tc/update-columns % [:titul-knihy :podtitul :vazba :barevnost :edice :tema :cenova-kategorie :tloustka]
                         (fn [column-data]
                           (map sanitize-name-str column-data)))
-     #_(tc/add-column % :tloustka (cat-tloustka %))
-     #_(tc/add-column % :cenova-kategorie (cat-cena %))
+     (tc/add-column % :tloustka (cat-tloustka %))
+     (tc/add-column % :cenova-kategorie (cat-cena %))
      (tc/add-column % :na-trhu (map months-on-market (ds/column raw-ds :Datum_zahajeni_prodeje)))
      (tc// % :mesicni-prodej-ks [:celkovy-prodej-ks :na-trhu])
      (tc/round % :mesicni-prodej-ks :mesicni-prodej-ks)
@@ -107,9 +115,7 @@
      (tc/drop-columns % [:ks-papir :ks-e-kniha :ks-audiokniha :trzby-papir :trzby-e-kniha :trzby-audiokniha
                          :dpc-e-kniha :dpc-audiokniha :datum-zahajeni-prodeje
                          :titul-knihy :podtitul :na-trhu :mesicni-trzby :pocet-stran
-                         :celkovy-prodej-trzby :celkovy-prodej-ks :edice :mesicni-prodej-ks :dpc-papir
-                        ; mažeme kvůli testu jen:
-                         :cesky-autor :tema :vazba])
+                         :celkovy-prodej-trzby :celkovy-prodej-ks :edice :mesicni-prodej-ks :dpc-papir])
      #_(tc/convert-types % [:tloustka :barevnost :cesky-autor :tema :cenova-kategorie :vazba] :categorical)))
 
  (kind/table
@@ -150,6 +156,8 @@
       :values  (distinct (get ds %)))
     (ds/column-names ds))
 
+ 
+
  (def numeric-melvil-data2
    (-> ds
 
@@ -158,12 +166,14 @@
        (ds/categorical->number [:prodejnost] ["underperformer" "normal" "bestseller"] :float-64)
 
        ;; 2. One-hot encode other categorical features.
-       (ds/categorical->one-hot [#_:tloustka :barevnost #_#_#_:cesky-autor :tema :vazba #_:cenova-kategorie])
+       (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
 
        ;; 4. Drop rows that contain any nil values.
        ;;    This is critical to remove rows where :prodejnost might have become nil,
        ;;    or any nils introduced by other steps.
        (tc/drop-missing)
+
+       clean-one-hot-metadata
 
        ;; 5. Set the inference target on the fully cleaned dataset.
        ;;    Ensure the keyword matches the (potentially sanitized) name of your target column.
@@ -182,10 +192,7 @@
    (first
     (tc/split->seq numeric-melvil-data2 :holdout {:seed 112223})))
 
- (:train split)
- (:test split)
-
- ;; It's good practice to ensure the target is also set on the split datasets,
+  ;; It's good practice to ensure the target is also set on the split datasets,
  ;; though it should be inherited if set before splitting.
  (def split-fixed
    {:train (ds-mod/set-inference-target (:train split) :prodejnost)
@@ -193,56 +200,29 @@
 
  (map #(vals %) (:train split-fixed))
 
- (def sklearn-rf-model
-   (ml/train (:train split)
-             {:model-type :sklearn.ensemble/random-forest-classifier
-              :target-columns :prodejnost
-              :n-estimators 100
-              :max-depth 8
-              :random-state 42}))
+ (def rf-model
+   (ml/train
+    (:train split)
+    {:model-type :scicloj.ml.tribuo/classification
+     :tribuo-components [{:name "random-forest"
+                          :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                          :properties {:maxDepth "8"
+                                       :useRandomSplitPoints "false"
+                                       :fractionFeaturesInSplit "0.5"}}]
+     :tribuo-trainer-name "random-forest"}))
 
- (map meta (vals (:train split)))
-
- (meta split)
-
- (:train split-fixed)
-
- #_(keys (ns-publics 'scicloj.metamorph.ml.sklearn))
-
- ;; ### Toto funguje
-
- ;; Test základní ML bez složitých dependencies
- (def simple-test
-   (tc/dataset {:x [1 2 3 4 5]
-                :y ["a" "b" "a" "b" "a"]}))
-
- (def sample-split
-   (first
-    (tc/split->seq simple-test :holdout {:seed 112723})))
-
- (def simple-model
-   (ml/train (ds-mod/set-inference-target (:train sample-split) :y)
-             {:model-type :scicloj.ml.tribuo/classification}))
-
-
- (println "Basic ML works:" (some? simple-model))
-
- ;; Train with sklearn random forest instead
- sklearn-rf-model
-
- (map meta (vals (:train split-fixed)))
-
+ 
  ;; Make predictions
- (def sklearn-predictions
-   (ml/predict (:test split-fixed) sklearn-rf-model))
+ (def rf-predictions
+   (ml/predict (:test split-fixed) rf-model))
 
  ;; Evaluate accuracy
- (def sklearn-accuracy
+ (def rf-accuracy
    (loss/classification-accuracy
     (ds/column (:test split-fixed) :prodejnost)
-    (ds/column sklearn-predictions :prodejnost)))
+    (ds/column rf-predictions :prodejnost)))
 
- (println "Sklearn Random Forest Accuracy:" sklearn-accuracy)
+ (println "RF Random Forest Accuracy:" rf-accuracy)
 
 
 
@@ -269,8 +249,38 @@
              {:model-type :metamorph.ml/dummy-classifier}))
 
 
- (def lreg-model (ml/train (:train simple-split-for-train)
+ (def lreg-model (ml/train (:train split-fixed)
                            {:model-type :scicloj.ml.tribuo/classification
                             :tribuo-components [{:name "logistic"
                                                  :type "org.tribuo.classification.sgd.linear.LinearSGDTrainer"}]
                             :tribuo-trainer-name "logistic"}))
+ 
+
+ ;; Vytvoření vlastní vizualizace rozhodnutí
+(defn create-decision-visualization [model test-data]
+  (let [predictions (ml/predict test-data model)
+        data (map-indexed 
+               (fn [idx row] 
+                 {:index idx 
+                  :prediction (get-in predictions [:row idx :species])
+                  :actual (get row :y)})
+               (ds/rows test-data :as-maps))]
+    ;; Použijte Clay nebo jinou viz knihovnu pro zobrazení
+    {:data data
+     :mark "circle"
+     :encoding {:x {:field "index" :type "quantitative"}
+                :y {:field "prediction" :type "nominal"}
+                :color {:field "actual" :type "nominal"}}}))
+
+(kind/vega 
+  (create-decision-visualization rf-model (:test split-fixed))
+  {:width 800
+   :height 400
+   :title "Rozhodnutí modelu pro testovací data"})
+
+; Vytvoření vizualizace rozhodnutí pro dummy model
+(kind/vega 
+  (create-decision-visualization dummy-model (:test split-fixed))
+  {:width 800
+   :height 400
+   :title "Rozhodnutí Dummy modelu pro testovací data"})
