@@ -181,7 +181,7 @@
           relevant-melvil-data
           cat-maps))
 
-(def numeric-melvil-data2
+(def ds-transformed
   (let [target-col-original-name :Prodejnost ;; Název cílového sloupce před sanitizací
         ;; Sanitizovaný název cílového sloupce, který budeme používat v set-inference-target
         target-col-sanitized-keyword (keyword (sanitize-column-name-str target-col-original-name))]
@@ -195,15 +195,15 @@
         ;; Použijte sanitizovaný název cílového sloupce
         (ds-mod/set-inference-target target-col-sanitized-keyword))))
 
-(ds/column-names numeric-melvil-data2)
-(-> numeric-melvil-data2 meta :tech.v3.dataset/target-column)
+(ds/column-names ds-transformed)
+(-> ds-transformed meta :tech.v3.dataset/target-column)
 
 #_(ds/column-names numeric-melvil-data2)
 
 ;; Pak teprve rozděl na trénovací a testovací sadu
 (def split
   (first
-   (tc/split->seq numeric-melvil-data2 :holdout {:seed 112723})))
+   (tc/split->seq ds-transformed :holdout {:seed 112723})))
 
 
 (second split)

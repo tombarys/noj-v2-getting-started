@@ -25,9 +25,16 @@
 
 (defonce raw-ds (tc/dataset "/Users/tomas/Downloads/melvil2.csv" {:key-fn keyword :separator \tab}))
 
-; (ns-unmap *ns* 'raw-ds)
+;; (ns-unmap *ns* 'raw-ds)
 
-;; ## Pomocné funkce pro sanitizaci názvů sloupců
+;; ## Pomocné funkce pro sanitizaci sloupců
+
+(defn add-missing-columns [ds all-columns]
+  (let [missing-cols (clojure.set/difference (set all-columns) (set (ds/column-names ds)))]
+    (reduce (fn [d col]
+              (ds/add-or-update-column d col (repeat (count (ds/rows d)) 0)))
+            ds
+            missing-cols)))
 
 (defn clean-one-hot-metadata [dataset]
   (reduce (fn [ds col-name]
@@ -43,8 +50,8 @@
   (if-not (and (nil? s) (empty? s))
     (let [hyphens (str/replace s #"_" "-")
           nfd-normalized (Normalizer/normalize hyphens Normalizer$Form/NFD)
-          no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "")
-          no-spaces (str/replace no-diacritics #" " "-")
+          no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "") ; dočasně
+          no-spaces (str/replace nfd-normalized #" " "-")
           ;; Můžete přidat další pravidla, např. odstranění speciálních znaků
           ;; alphanumeric-and-underscore (str/replace no-diacritics #"[^a-zA-Z0-9_]" "")
           lower-cased (str/lower-case no-spaces)]
@@ -96,9 +103,8 @@
 
 ; ## Začátek zpracování 
 
-(def ds
+(defn process-ds [raw-ds]
   (as-> raw-ds %
-    #_(tc/select-rows % (range 10))
     (tc/rename-columns % :all (fn [col] (if col (keyword (sanitize-name-str (name col))) col)))
     (tc/update-columns % [:titul-knihy :podtitul :vazba :barevnost :edice :tema :cenova-kategorie :tloustka]
                        (fn [column-data]
@@ -115,6 +121,8 @@
                         :celkovy-prodej-trzby :celkovy-prodej-ks :edice :mesicni-prodej-ks :dpc-papir])
     #_(tc/convert-types % [:tloustka :barevnost :cesky-autor :tema :cenova-kategorie :vazba] :categorical)))
 
+(def ds (process-ds raw-ds))
+
 (kind/table
  (tc/info ds)
  {:width 800
@@ -122,22 +130,9 @@
   :title "Dataset info"})
 
 
-;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/testuju.clj
-(plotly/layer-point ds {:=x :prodejnost
-                        :=y :cenova-kategorie
-                        :=text :titul-knihy})
-
-(plotly/splom ds {:=colnames [:tloustka :prodejnost]
-                  :=color :tloustka
-                  :=text :titul-knihy})
-
-
-(kind/table
- (map meta (tc/columns ds)))
-
 ;; ## Příprava dat pro strojové učení
 
-(def numeric-melvil-data2
+(defn transform-ds [ds]
   (-> ds
       (ds/categorical->number [:prodejnost] ["underperformer" "normal" "bestseller"] :float-64)
       (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
@@ -146,34 +141,40 @@
       (ds-mod/set-inference-target [:prodejnost])))
 
 
-(kind/table
- numeric-melvil-data2)
+(def ds-transformed
+  (transform-ds ds))
+
+(def all-columns
+  (->> (ds/column-names ds-transformed)
+       (map keyword)
+       (filter #(not= % :prodejnost))
+       (into [])))
 
 (kind/table
- (tc/info numeric-melvil-data2 :columns))
+ ds-transformed)
 
-;; Re-define split and split-fixed based on the new numeric-melvil-data2
+
+;; ## Re-define split 
 (def split
   (first
-   (tc/split->seq numeric-melvil-data2 :holdout {:seed 112223})))
+   (tc/split->seq ds-transformed :holdout {:ratio 0.85 :seed 112223})))
 
-#_(def split-fixed
-  {:train (ds-mod/set-inference-target (:train split) :prodejnost)
-   :test (ds-mod/set-inference-target (:test split) :prodejnost)})
+;;; ## Trénink modelu
 
 (def rf-model
   (ml/train
    (:train split)
    {:model-type :scicloj.ml.tribuo/classification
     :tribuo-components [{:name "random-forest"
+                         :target-columns [:prodejnost]
                          :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                         :properties {:maxDepth "8"
-                                      :useRandomSplitPoints "false"
-                                      :fractionFeaturesInSplit "0.5"}}]
+                         :properties {:maxDepth "10"
+                                      :useRandomSplitPoints "true"
+                                      :fractionFeaturesInSplit "0.3"}}]
     :tribuo-trainer-name "random-forest"}))
 
 
-;; ## Make predictions
+;; # Make predictions
 (def rf-predictions
   (ml/predict (:test split) rf-model))
 
@@ -189,13 +190,44 @@
    (ds/column (:test split) :prodejnost)
    (ds/column rf-predictions :prodejnost)))
 
-(println "RF Random Forest Accuracy:" rf-accuracy)
+; RF Random Forest Accuracy:
+rf-accuracy
+
+
+; ## Predicting a book success
+
+(defn process-ds-for-prediction [raw-ds]
+  (as-> raw-ds %
+    (tc/add-column % :tloustka (cat-tloustka %))
+    (tc/add-column % :cenova-kategorie (cat-cena %))
+    (tc/drop-columns % [:ks-papir :ks-e-kniha :ks-audiokniha :trzby-papir :trzby-e-kniha :trzby-audiokniha
+                        :dpc-e-kniha :dpc-audiokniha :datum-zahajeni-prodeje
+                        :titul-knihy :podtitul :na-trhu :mesicni-trzby :pocet-stran
+                        :celkovy-prodej-trzby :celkovy-prodej-ks :edice :mesicni-prodej-ks :dpc-papir])
+    #_(tc/convert-types % [:tloustka :barevnost :cesky-autor :tema :cenova-kategorie :vazba] :categorical)))
+
+(ml/predict
+ (-> (tc/dataset
+      [{:barevnost "cernobila"
+        :cesky-autor "ne"
+        :pocet-stran 450
+        :dpc-papir 650
+        :tema "produktivita"
+        :vazba "vazba-pevna"
+        :prodejnost nil}])
+     (process-ds-for-prediction)
+     (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
+     (add-missing-columns all-columns)
+     clean-one-hot-metadata
+     (ds-mod/set-inference-target [:prodejnost]))
+ rf-model)
+
 
 ; ## Dummy model for testing
 
 #_(def dummy-model
-  (ml/train (ds-mod/set-inference-target (:train split) :y)
-            {:model-type :metamorph.ml/dummy-classifier}))
+    (ml/train (ds-mod/set-inference-target (:train split) :y)
+              {:model-type :metamorph.ml/dummy-classifier}))
 
 
 (def lreg-model (ml/train (:train split)
@@ -205,31 +237,3 @@
                            :tribuo-trainer-name "logistic"}))
 
 
-;; Vytvoření vlastní vizualizace rozhodnutí
-(defn create-decision-visualization [model test-data]
-  (let [predictions (ml/predict test-data model)
-        data (map-indexed
-              (fn [idx row]
-                {:index idx
-                 :prediction (get-in predictions [:row idx :species])
-                 :actual (get row :y)})
-              (ds/rows test-data :as-maps))]
-    ;; Použijte Clay nebo jinou viz knihovnu pro zobrazení
-    {:data data
-     :mark "circle"
-     :encoding {:x {:field "index" :type "quantitative"}
-                :y {:field "prediction" :type "nominal"}
-                :color {:field "actual" :type "nominal"}}}))
-
-#_(kind/vega
- (create-decision-visualization rf-model (:test split))
- {:width 800
-  :height 400
-  :title "Rozhodnutí modelu pro testovací data"})
-
-; Vytvoření vizualizace rozhodnutí pro dummy model
-#_(kind/vega
- (create-decision-visualization dummy-model (:test split))
- {:width 800
-  :height 400
-  :title "Rozhodnutí Dummy modelu pro testovací data"})
