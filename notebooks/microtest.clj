@@ -1,7 +1,6 @@
-;; Porovnání ds/categorical->one-hot vs tc/pivot->wider
-
 (ns microtest
   (:require
+   [microtest.patch]
    [tech.v3.dataset :as ds]
    [tablecloth.api :as tc]
    [scicloj.ml.metamorph :as ml]

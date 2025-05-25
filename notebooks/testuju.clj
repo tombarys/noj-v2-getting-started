@@ -5,7 +5,7 @@
    [scicloj.tableplot.v1.plotly :as plotly]
    [java-time.api :as jt]
    [tech.v3.dataset :as ds]
-   [scicloj.ml.tribuo]
+   [scicloj.ml.tribuo :as tribuo]
    [tech.v3.dataset.categorical :as ds-cat]
    [tablecloth.api :as tc]
    [clojure.string :as str]
