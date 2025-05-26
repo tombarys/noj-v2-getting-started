@@ -1,11 +1,11 @@
 (ns microtest
   (:require
-   [microtest.patch]
+   [microtest-patch]
    [tech.v3.dataset :as ds]
    [tablecloth.api :as tc]
-   [scicloj.ml.metamorph :as ml]
    [clojure.string :as str]
-   [tech.v3.dataset.modelling :as ds-mod]))
+   [tech.v3.dataset.modelling :as ds-mod]
+   [scicloj.metamorph.ml :as ml]))
 
 (def test-data
   {:x-1 [0 1 0 1 0 1]
@@ -49,9 +49,10 @@
       (ds/categorical->number [:y])
       (ds/categorical->one-hot [:cat])
       #_(ds/rename-columns {:cat-a :cata :cat-b :catb :cat-c :catc})
-      clean-one-hot-metadata
+      
       (ds-mod/set-inference-target :y)))
 
 (def fixed-model
   (ml/train fixed-solution
             {:model-type :metamorph.ml/dummy-classifier}))
+

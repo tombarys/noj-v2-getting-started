@@ -1,4 +1,4 @@
-(ns microtest.patch
+(ns microtest-patch
   (:require [scicloj.metamorph.ml]))
 
 

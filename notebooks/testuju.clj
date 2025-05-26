@@ -1,6 +1,7 @@
 (ns testuju
   (:require
    [tech.v3.dataset.tensor]
+   [microtest-patch]
    [scicloj.kindly.v4.kind :as kind]
    [scicloj.tableplot.v1.plotly :as plotly]
    [java-time.api :as jt]
@@ -140,7 +141,7 @@
       (ds/categorical->number [:prodejnost] ["underperformer" "normal" "bestseller"] :float-64)
       (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
       (tc/drop-missing)
-      clean-one-hot-metadata
+      #_clean-one-hot-metadata
       (tc/update-columns [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie] vec)
       (ds-mod/set-inference-target [:prodejnost])))
 
@@ -222,7 +223,6 @@ rf-accuracy
      (process-ds-for-prediction)
      (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
      (add-missing-columns all-columns)
-     clean-one-hot-metadata
      (ds-mod/set-inference-target [:prodejnost]))
  rf-model)
 
