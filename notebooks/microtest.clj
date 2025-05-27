@@ -1,58 +1,45 @@
 (ns microtest
-  (:require
-   [microtest-patch]
-   [tech.v3.dataset :as ds]
-   [tablecloth.api :as tc]
-   [clojure.string :as str]
-   [tech.v3.dataset.modelling :as ds-mod]
-   [scicloj.metamorph.ml :as ml]))
+   (:require
+    [tech.v3.dataset :as ds]
+    [scicloj.ml.tribuo]
+    [tablecloth.api :as tc]
+    [scicloj.metamorph.ml :as ml]
+    [scicloj.metamorph.ml.loss]
+    [tech.v3.dataset.modelling :as ds-mod]))
 
-(def test-data
-  {:x-1 [0 1 0 1 0 1]
-   :x-2 [1 0 1 0 1 0]
-   :cat [:a :b :c :a :b :c]
-   :y [:a :a :b :b :a :b]})
+(def simple-ready-for-train
+  (->
+   {:x-1 [0 1 0]
+    :x-2 [1 0 1]
+    :cat [:a :b :c]
+    :y [:a :a :b]}
 
-;; Prozkoumejme metadata jednotlivých sloupců
-(defn inspect-column-metadata [dataset]
-  (doseq [col-name (ds/column-names dataset)]
-    (let [col (ds/column dataset col-name)
-          metadata (meta col)]
-      (println (str col-name ": " metadata)))))
+   (ds/->dataset)
+   (ds/categorical->number [:y])
+   (ds/categorical->one-hot [:cat])
+   (ds-mod/set-inference-target [:y])))
 
-;; Test
-(def test-ds (-> test-data
-                 ds/->dataset
-                 (ds/categorical->number [:y])
-                 (ds/categorical->one-hot [:cat])
-                 (ds-mod/set-inference-target :y)))
+(def simple-split-for-train
+   (first
+      (tc/split->seq simple-ready-for-train :holdout {:seed 112723})))
 
-(inspect-column-metadata test-ds)
+(def dummy-model
+  (ml/train (ds-mod/set-inference-target (:train simple-split-for-train) :y)
+            {:model-type :scicloj.ml.tribuo/classification
+             :tribuo-components [{:name "trainer"
+                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                                  :properties {"maxDepth"  "6"
+                                               :seed       "12345"}}]
+             :tribuo-trainer-name "trainer"}))
 
-;; Zkuste taky po rename
-(def renamed-ds (ds/rename-columns test-ds {:cat-a :cata :cat-b :catb :cat-c :catc}))
-(inspect-column-metadata renamed-ds)
 
-(defn clean-one-hot-metadata [dataset]
-  (reduce (fn [ds col-name]
-            (let [col (ds/column ds col-name)
-                  old-meta (meta col)
-                  clean-meta (dissoc old-meta :one-hot-map :categorical-map)]
-              (ds/add-or-update-column ds col-name
-                                       (with-meta (vec col) clean-meta))))
-          dataset
-          (ds/column-names dataset)))
+dummy-model
+(def dummy-predictions
+  (ml/predict (:test simple-split-for-train) dummy-model))
 
-(def fixed-solution
-  (-> test-data
-      ds/->dataset
-      (ds/categorical->number [:y])
-      (ds/categorical->one-hot [:cat])
-      #_(ds/rename-columns {:cat-a :cata :cat-b :catb :cat-c :catc})
-      
-      (ds-mod/set-inference-target :y)))
+(tc/select-columns dummy-predictions [:y :y-predicted])
 
-(def fixed-model
-  (ml/train fixed-solution
-            {:model-type :metamorph.ml/dummy-classifier}))
-
+(def dummy-accuracy
+  (scicloj.metamorph.ml.loss/classification-accuracy
+   (ds/column (:test simple-split-for-train) :y)
+   (ds/column dummy-predictions :y)))

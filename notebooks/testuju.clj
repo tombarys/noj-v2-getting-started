@@ -1,7 +1,7 @@
 (ns testuju
   (:require
    [tech.v3.dataset.tensor]
-   [microtest-patch]
+   #_[microtest-patch]
    [scicloj.kindly.v4.kind :as kind]
    [scicloj.tableplot.v1.plotly :as plotly]
    [java-time.api :as jt]
@@ -37,7 +37,7 @@
             ds
             missing-cols)))
 
-(defn clean-one-hot-metadata [dataset]
+#_(defn clean-one-hot-metadata [dataset]
   (reduce
    (fn [ds col-name]
      (ds/add-or-update-column ds col-name (vec (ds/column ds col-name))))
@@ -46,7 +46,7 @@
 
 (kind/table 
  (tc/info raw-ds))
-(kind/table 
+#_(kind/table 
  (tc/info (clean-one-hot-metadata raw-ds)))
 
 
@@ -55,7 +55,7 @@
     (let [hyphens (str/replace s #"_" "-")
           nfd-normalized (Normalizer/normalize hyphens Normalizer$Form/NFD)
           no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "") ; dočasně
-          no-spaces (str/replace nfd-normalized #" " "-")
+          no-spaces (str/replace no-diacritics #" " "-")
           ;; Můžete přidat další pravidla, např. odstranění speciálních znaků
           ;; alphanumeric-and-underscore (str/replace no-diacritics #"[^a-zA-Z0-9_]" "")
           lower-cased (str/lower-case no-spaces)]
@@ -140,14 +140,19 @@
   (-> ds
       (ds/categorical->number [:prodejnost] ["underperformer" "normal" "bestseller"] :float-64)
       (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
-      (tc/drop-missing)
-      #_clean-one-hot-metadata
+      #_(tc/drop-missing)
       (tc/update-columns [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie] vec)
       (ds-mod/set-inference-target [:prodejnost])))
 
 
 (def ds-transformed
   (transform-ds ds))
+
+(kind/table
+ (tc/info ds-transformed)
+ {:width 800
+  :height 400
+  :title "Transformed dataset info"})
 
 (def all-columns
   (->> (ds/column-names ds-transformed)
@@ -163,6 +168,12 @@
 (def split
   (first
    (tc/split->seq ds-transformed :holdout {:ratio 0.85 :seed 112223})))
+
+(kind/table
+ (tc/info (:train split))
+ {:width 800
+  :height 400
+  :title "Train set info"})
 
 ;;; ## Trénink modelu
 
@@ -192,8 +203,8 @@
 ;; ## Evaluate accuracy
 (def rf-accuracy
   (loss/classification-accuracy
-   (ds/column (:test split) :prodejnost)
-   (ds/column rf-predictions :prodejnost)))
+   (vec (ds/column (:test split) :prodejnost))
+   (vec (ds/column rf-predictions :prodejnost))))
 
 ; RF Random Forest Accuracy:
 rf-accuracy
@@ -213,12 +224,12 @@ rf-accuracy
 
 (ml/predict
  (-> (tc/dataset
-      [{:barevnost "cernobila"
-        :cesky-autor "ne"
-        :pocet-stran 450
-        :dpc-papir 650
+      [{:barevnost "barevna"
+        :cesky-autor "ano"
+        :pocet-stran 250
+        :dpc-papir 400
         :tema "produktivita"
-        :vazba "vazba-pevna"
+        :vazba "vazba-mekka-s-chlopnemi-V2"
         :prodejnost nil}])
      (process-ds-for-prediction)
      (ds/categorical->one-hot [:tloustka :barevnost :cesky-autor :tema :vazba :cenova-kategorie])
