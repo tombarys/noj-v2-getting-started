@@ -30,7 +30,7 @@
 (def raw-ds (tc/dataset
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
              {:header? true :separator ","
-              :num-rows 10000
+              #_:num-rows #_10000
               :column-allowlist ["Produkt (produkty)"]
               :key-fn #(keyword (sanitize-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
@@ -46,28 +46,40 @@
 
 ;; ## Pomocné funkce pro sanitizaci sloupců
 
+(defn books-only [order]
+  (remove (fn [item]
+            (some (fn [substr] (str/includes? (name item) substr))
+                  ["balicek" "poukaz" "zapisnik"]))  order))
+
 (defn parse-books [s]
-  (->> (str/split s #",\-^\d") ;; FIXME nutno opravit tento split
+  (->> (str/split s #",\s\d+") ;; FIXME nutno opravit tento split
+       (map #(str/replace % #"\d*×\s" ""))
+       (map #(str/replace % #"," ""))
+       (map #(str/replace % #"\[|\]|komplet|a\+e|\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha" ""))
+       (map #(str/replace % #"\+" ""))
        (map #(str/trim %))
-       (map #(str/replace % #"\d+×\s" ""))
-       (map #(str/replace % #"\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|\s\(audio\)|\-e\-kniha\+audio|\-papir\-\+\-e\-kniha" ""))
        (map sanitize-name-str)
+       (map #(str/replace % #"\-+$" ""))
+       (map #(str/replace % #"3" "k3"))
+       (remove (fn [item]
+                 (some (fn [substr] (str/includes? (name item) substr))
+                       ["balicek" "poukaz" "zapisnik"])))
        distinct
-       (map keyword)))
+       (mapv keyword)))
 
 (def parsed-books
-  (parse-books "1× Konec prokrastinace (P+A), 12× Konec prokrastinace (e-kniha), 
-                2× Zivot sama pohroma-papir + e-kniha,
-                3× Nexus (audio), 2× Bulbem zachranare-e-kniha+audio"))
+  (parse-books "1× Balíček, 1× 365 Skrytý potenciál, 1× Nové zbraně vlivu, 1× Ukaž, co děláš! (e-kniha), 1× Alchymie (audio), 1× Dárkový poukaz 1 000 Kč "))
 
+parsed-books
 
-(def ds (tc/select-rows raw-ds #(str/includes? (str (:produkt-produkty %)) "Ukaž")))
+(def ds 
+  (tc/select-rows raw-ds #(str/includes? (str (:produkt-produkty %)) "Ukaž")))
 
 ds
 
 (def parsed-real-ds
   (->> 
-   (ds/column ds :produkt-produkty)
+   (ds/column raw-ds :produkt-produkty)
    (mapcat parse-books)
    distinct
    sort))
@@ -87,7 +99,7 @@ parsed-real-ds
         rows-with-books (keep-indexed
                          (fn [idx product-string]
                            (let [books-in-row (parse-books product-string)]
-                             (when (> (count books-in-row) 2)  ; Filtrujeme řádky s více než jednou knihou
+                             (when (> (count books-in-row) 1)  ; Filtrujeme řádky s více než jednou knihou
                                (let [;; Rozdělíme knihy - všechny kromě poslední pro features, poslední pro target
                                      feature-books (set (butlast books-in-row))
                                      target-book (last books-in-row)
@@ -118,6 +130,8 @@ parsed-real-ds
 
 (def processed-ds (create-one-hot-encoding raw-ds))
 
+processed-ds
+
 (def split
   (first
    (tc/split->seq processed-ds :holdout {:seed 112223})))
@@ -131,9 +145,9 @@ split
     :tribuo-components [{:name "random-forest"
                          :target-columns [:next-predicted-buy]
                          :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                         :properties {:maxDepth "10"
+                         :properties {:maxDepth "24"
                                       :useRandomSplitPoints "true"
-                                      :fractionFeaturesInSplit "0.3"}}]
+                                      :fractionFeaturesInSplit "0.8"}}]
     :tribuo-trainer-name "random-forest"}))
 
 
