@@ -14,7 +14,8 @@
 (defn sanitize-name-str [s]
   (if-not (and (nil? s) (empty? s))
     (let [hyphens (str/replace s #"_" "-")
-          nfd-normalized (Normalizer/normalize hyphens Normalizer$Form/NFD)
+          trimmed (str/trim hyphens)
+          nfd-normalized (Normalizer/normalize trimmed Normalizer$Form/NFD)
           no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "") ; dočasně
           no-spaces (str/replace no-diacritics #" " "-")
           no-brackets (str/replace no-spaces #"\(|\)" "")
@@ -31,31 +32,45 @@
              {:header? true :separator ","
               :num-rows 10000
               :column-allowlist ["Produkt (produkty)"]
-              :key-fn #(keyword (sanitize-name-str %))}))
+              :key-fn #(keyword (sanitize-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 
 (kind/table
  (tc/info raw-ds))
 
-;; ## Pomocné funkce pro sanitizaci sloupců
 (kind/table
- (ds/sample raw-ds))
+ (ds/sample
+  (tc/select-rows raw-ds #(str/includes? (str (:produkt-produkty %)) "Ukaž")) 100))
+
+
+
+;; ## Pomocné funkce pro sanitizaci sloupců
 
 (defn parse-books [s]
   (->> (str/split s #",")
        (map #(str/trim %))
        (map #(str/replace % #"\d+×\s" ""))
-       (map #(str/replace % #"\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|\s\(audio\)" ""))
-       distinct
+       (map #(str/replace % #"\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|\s\(audio\)|\-e\-kniha\+audio|\-papir\-\+\-e\-kniha" ""))
        (map sanitize-name-str)
+       distinct
        (map keyword)))
 
-
-
 (def parsed-books
-  (parse-books "1× Konec prokrastinace (P+A), 12× Konec prokrastinace (e-kniha), 3× Nexus (audio)"))
+  (parse-books "1× Konec prokrastinace (P+A), 12× Konec prokrastinace (e-kniha), 
+                2× Zivot sama pohroma-papir + e-kniha,
+                3× Nexus (audio), 2× Bulbem zachranare-e-kniha+audio"))
 
-parsed-books
+
+(def ds (tc/select-rows raw-ds #(str/includes? (str (:produkt-produkty %)) "Ukaž")))
+
+(def parsed-real-ds
+  (->> 
+   (ds/column ds :produkt-produkty)
+   (mapcat parse-books)
+   distinct
+   sort))
+
+parsed-real-ds
 
 
 (defn create-one-hot-encoding [raw-ds]
@@ -70,7 +85,7 @@ parsed-books
         rows-with-books (keep-indexed
                          (fn [idx product-string]
                            (let [books-in-row (parse-books product-string)]
-                             (when (> (count books-in-row) 1)  ; Filtrujeme řádky s více než jednou knihou
+                             (when (> (count books-in-row) 2)  ; Filtrujeme řádky s více než jednou knihou
                                (let [;; Rozdělíme knihy - všechny kromě poslední pro features, poslední pro target
                                      feature-books (set (butlast books-in-row))
                                      target-book (last books-in-row)
