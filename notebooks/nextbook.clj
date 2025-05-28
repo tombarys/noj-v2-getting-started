@@ -47,7 +47,7 @@
 ;; ## Pomocné funkce pro sanitizaci sloupců
 
 (defn parse-books [s]
-  (->> (str/split s #",")
+  (->> (str/split s #",\-^\d") ;; FIXME nutno opravit tento split
        (map #(str/trim %))
        (map #(str/replace % #"\d+×\s" ""))
        (map #(str/replace % #"\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|\s\(audio\)|\-e\-kniha\+audio|\-papir\-\+\-e\-kniha" ""))
@@ -62,6 +62,8 @@
 
 
 (def ds (tc/select-rows raw-ds #(str/includes? (str (:produkt-produkty %)) "Ukaž")))
+
+ds
 
 (def parsed-real-ds
   (->> 
