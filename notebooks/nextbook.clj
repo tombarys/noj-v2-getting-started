@@ -151,13 +151,78 @@ split
     :tribuo-trainer-name "random-forest"}))
 
 
+(def svm-model
+  (ml/train
+   (:train split)
+   {:model-type :scicloj.ml.tribuo/classification
+    :tribuo-components [{:name "svm"
+                         :target-columns [:next-predicted-buy]
+                         :type "org.tribuo.classification.libsvm.LibSVMClassificationTrainer"
+                         :properties {:svmType "C_SVC"
+                                      :kernelType "RBF"
+                                      :gamma "0.1"
+                                      :cost "1.0"}}]
+    :tribuo-trainer-name "svm"}))
+
+(def xgboost-simple-model ;; taky funguje
+  (ml/train
+   (:train split)
+   {:model-type :scicloj.ml.tribuo/classification
+    :tribuo-components [{:name "xgboost-simple"
+                         :target-columns [:next-predicted-buy]
+                         :type "org.tribuo.classification.xgboost.XGBoostClassificationTrainer"
+                         :properties {:numTrees "100"
+                                      :maxDepth "6"
+                                      :eta "0.3"}}]
+    :tribuo-trainer-name "xgboost-simple"}))
+
+(def xgboost-classification-model ;; tento funguje
+  (ml/train
+   (:train split)
+   {:model-type :scicloj.ml.tribuo/classification
+    :tribuo-components [{:name "xgboost-classification"
+                         :target-columns [:next-predicted-buy]
+                         :type "org.tribuo.classification.xgboost.XGBoostClassificationTrainer"
+                         :properties {:numTrees "100"
+                                      :maxDepth "10"
+                                      :eta "0.3"
+                                      :subsample "1.0"
+                                      :gamma "0.0"
+                                      :minChildWeight "1"
+                                      :lambda "1.0"
+                                      :alpha "0.0"}}]
+    :tribuo-trainer-name "xgboost-classification"}))
+
+(def nb-model
+  (ml/train
+   (:train split)
+   {:model-type :scicloj.ml.tribuo/classification
+    :tribuo-components [{:name "naive-bayes"
+                         :target-columns [:next-predicted-buy]
+                         :type "org.tribuo.classification.mnb.MultinomialNaiveBayesTrainer"
+                         :properties {:alpha "1.0"}}]
+    :tribuo-trainer-name "naive-bayes"}))
+
+
+(def lr-model
+  (ml/train
+   (:train split)
+   {:model-type :scicloj.ml.tribuo/classification
+    :tribuo-components [{:name "logistic-regression"
+                         :target-columns [:next-predicted-buy]
+                         :type "org.tribuo.classification.liblinear.LibLinearClassificationTrainer"
+                         :properties {:solverType "L2R_LR"
+                                      :cost "1.0"
+                                      :epsilon "0.01"}}]
+    :tribuo-trainer-name "logistic-regression"}))
+
 ;; # Make predictions
-(def rf-predictions
-  (ml/predict (:test split) rf-model))
+(def predictions
+  (ml/predict (:test split) xgboost-simple-model))
 
-(def rf-accuracy
+(def accuracy
   (loss/classification-accuracy
-   (vec (ds/column (:test split) :next-predicted-buy))
-   (vec (ds/column rf-predictions :next-predicted-buy))))
+   (ds/column (:test split) :next-predicted-buy)
+   (ds/column predictions :next-predicted-buy)))
 
-rf-accuracy
+accuracy
