@@ -11,7 +11,7 @@
   (:import [java.text Normalizer Normalizer$Form]))
 
 
-(defn sanitize-name-str [s]
+(defn sanitize-column-name-str [s]
   (if-not (and (nil? s) (empty? s))
     (let [hyphens (str/replace s #"_" "-")
           trimmed (str/trim hyphens)
@@ -31,9 +31,11 @@
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
              {:header? true :separator ","
               #_:num-rows #_10000
-              :column-allowlist ["Produkt (produkty)"]
-              :key-fn #(keyword (sanitize-name-str %))})) ;; tohle upraví jen názvy sloupců!
+              :column-allowlist ["Produkt (produkty)" "Zákazník"]
+              :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
+
+(tc/select-rows raw-ds #(re-find #"A.E" (str (:produkt-produkty %))))
 
 (kind/table
  (tc/info raw-ds))
@@ -52,18 +54,18 @@
                   ["balicek" "poukaz" "zapisnik"]))  order))
 
 (defn parse-books [s]
-  (->> (str/split s #",\s\d+") ;; FIXME nutno opravit tento split
+  (->> (str/split s #",\s\d+") 
        (map #(str/replace % #"\d*×\s" ""))
        (map #(str/replace % #"," ""))
-       (map #(str/replace % #"\[|\]|komplet|a\+e|\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha" ""))
+       (map #(str/replace % #"\(A\+E\)|\[|\]|komplet|a\+e|\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha" ""))
        (map #(str/replace % #"\+" ""))
        (map #(str/trim %))
-       (map sanitize-name-str)
-       (map #(str/replace % #"\-+$" ""))
-       (map #(str/replace % #"3" "k3"))
-       (remove (fn [item]
-                 (some (fn [substr] (str/includes? (name item) substr))
-                       ["balicek" "poukaz" "zapisnik"])))
+       (map sanitize-column-name-str)
+       (map #(str/replace % #"\-\-.+$" "")) ;; zdvojené názvy
+       (map #(str/replace % #"\-+$" "")) ;; pomlčky na konci
+       (map #(str/replace % #"3" "k3")) ;; eliminace čísel 3 na začátku dvou knih
+       (remove (fn [item] (some (fn [substr] (str/includes? (name item) substr))
+                                ["balicek" "poukaz" "zapisnik" "limitovana-edice" "aktualizovane-vydani"])))
        distinct
        (mapv keyword)))
 
@@ -85,7 +87,6 @@ ds
    sort))
 
 parsed-real-ds
-
 
 (defn create-one-hot-encoding [raw-ds]
   (let [;; Získáme všechny unikátní knihy ze všech řádků
@@ -125,12 +126,21 @@ parsed-real-ds
         (tc/add-column :row-index (range (tc/row-count raw-ds)))
         (tc/select-rows #(contains? valid-indices (:row-index %)))
         (tc/left-join one-hot-ds :row-index)
-        (tc/drop-columns [:row-index])
+        (tc/drop-columns [:row-index :zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
 (def processed-ds (create-one-hot-encoding raw-ds))
 
-processed-ds
+(kind/table
+ (ds/sample processed-ds 100))
+
+(ds/unique-by-column processed-ds :zakaznik)
+
+(kind/hiccup
+ [:div {:style {:max-height "600px"
+                :overflow-y :auto}}
+  (kind/table
+   processed-ds)])
 
 (def split
   (first
@@ -151,18 +161,20 @@ split
     :tribuo-trainer-name "random-forest"}))
 
 
-(def svm-model
-  (ml/train
-   (:train split)
-   {:model-type :scicloj.ml.tribuo/classification
-    :tribuo-components [{:name "svm"
-                         :target-columns [:next-predicted-buy]
-                         :type "org.tribuo.classification.libsvm.LibSVMClassificationTrainer"
-                         :properties {:svmType "C_SVC"
-                                      :kernelType "RBF"
-                                      :gamma "0.1"
-                                      :cost "1.0"}}]
-    :tribuo-trainer-name "svm"}))
+(comment
+  (def svm-model
+    (ml/train
+     (:train split)
+     {:model-type :scicloj.ml.tribuo/classification
+      :tribuo-components [{:name "svm"
+                           :target-columns [:next-predicted-buy]
+                           :type "org.tribuo.classification.libsvm.LibSVMClassificationTrainer"
+                           :properties {:svmType "C_SVC"
+                                        :kernelType "RBF"
+                                        :gamma "0.1"
+                                        :cost "1.0"}}]
+      :tribuo-trainer-name "svm"}))
+  )
 
 (def xgboost-simple-model ;; taky funguje
   (ml/train
@@ -218,7 +230,7 @@ split
 
 ;; # Make predictions
 (def predictions
-  (ml/predict (:test split) xgboost-simple-model))
+  (ml/predict (:test split) rf-model))
 
 (def accuracy
   (loss/classification-accuracy
