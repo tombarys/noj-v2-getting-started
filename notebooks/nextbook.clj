@@ -12,20 +12,16 @@
 
 
 (defn sanitize-column-name-str [s]
-  (if-not (and (nil? s) (empty? s))
+  (if (or (nil? s) (empty? s))
+    s
     (let [hyphens (str/replace s #"_" "-")
           trimmed (str/trim hyphens)
           nfd-normalized (Normalizer/normalize trimmed Normalizer$Form/NFD)
           no-diacritics (str/replace nfd-normalized #"\p{InCombiningDiacriticalMarks}+" "") ; dočasně
           no-spaces (str/replace no-diacritics #" " "-")
           no-brackets (str/replace no-spaces #"\(|\)" "")
-          ;; Můžete přidat další pravidla, např. odstranění speciálních znaků
-          ;; alphanumeric-and-underscore (str/replace no-diacritics #"[^a-zA-Z0-9_]" "")
           lower-cased (str/lower-case no-brackets)]
-      lower-cased)
-    s))
-
-;(ns-unmap *ns* 'raw-ds)
+      lower-cased)))
 
 (def raw-ds (tc/dataset
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
@@ -35,15 +31,8 @@
               :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 
- ; (tc/select-rows raw-ds #(re-find #"A.E" (str (:produkt-produkty %))))
-
 (kind/table
  (tc/info raw-ds))
-
-(kind/table
- (ds/sample
-  (tc/select-rows raw-ds #(str/includes? (str (:produkt-produkty %)) "Ukaž")) 100))
-
 
 ;; ## Pomocné funkce pro sanitizaci sloupců
 (defn parse-books [s]
@@ -61,16 +50,6 @@
                                 ["balicek" "poukaz" "zapisnik" "limitovana-edice" "aktualizovane-vydani"])))
        distinct
        (mapv keyword)))
-
-
-(def parsed-real-ds
-  (->>
-   (ds/column raw-ds :produkt-produkty)
-   (mapcat parse-books)
-   distinct
-   sort))
-
-parsed-real-ds
 
 
 (defn create-one-hot-encoding [raw-ds]
@@ -116,98 +95,72 @@ parsed-real-ds
 
 (def processed-ds (create-one-hot-encoding raw-ds))
 
-processed-ds
-
-
-(def ds
-  (tc/select-rows processed-ds #(= 3000 (:zakaznik %))))
-
-ds
-
-
 (kind/table
- (ds/sample processed-ds 100))
-
-(ds/unique-by-column processed-ds :zakaznik)
-
-
-
-(kind/hiccup
- [:div {:style {:max-height "600px"
-                :overflow-y :auto}}
-  (kind/table
-   processed-ds)])
+ (ds/sample processed-ds 20))
 
 (def split
   (first
    (tc/split->seq processed-ds :holdout {:seed 42})))
 
-split
-
-(def rf-model
-  (ml/train
-   (:train split)
-   {:model-type :scicloj.ml.tribuo/classification
-    :tribuo-components [{:name "random-forest"
-                         :target-columns [:next-predicted-buy]
-                         :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                         :properties {:maxDepth "11" ;; pro 11 je to 14.9
-                                      :useRandomSplitPoints "true"
-                                      :fractionFeaturesInSplit "1"}}]
-    :tribuo-trainer-name "random-forest"}))
-
-
-(loss/classification-accuracy
- (ds/column (:test split)
-            :next-predicted-buy)
- (ds/column (ml/predict (:test split) rf-model)
-            :next-predicted-buy))
-
-(def rf2-model
-  (ml/train
-   (:train split)
-   {:model-type :scicloj.ml.tribuo/classification
-    :tribuo-components [{:name "random-forest"
-                         :target-columns [:next-predicted-buy]
-                         :type "org.tribuo.common.tree.RandomForestTrainer"
-                         :properties {:numMembers "100"
-                                      :seed "42"
-                                      :innerTrainer "inner-trainer"
-                                      :combiner "voting-combiner"}}
-                        {:name "inner-trainer"
-                         :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                         :properties {:maxDepth "10"
-                                      :useRandomSplitPoints "false"
-                                      :fractionFeaturesInSplit "0.5"}}
-                        {:name "voting-combiner"
-                         :type "org.tribuo.classification.ensemble.VotingCombiner"}]
-    :tribuo-trainer-name "random-forest"}))
-
-;; ## Náhodný baseline
-(def random-baseline-accuracy
-  (let [unique-targets (-> (:train split)
-                           (ds/column :next-predicted-buy)
-                           distinct
-                           count)]
-    (/ 1.0 unique-targets)))
-
-(println "Náhodný baseline:" random-baseline-accuracy)
-(println "Model accuracy:" 0.149)
-(println "Zlepšení oproti náhodnému:" (/ 0.149 random-baseline-accuracy))
+(comment
+  (def rf-model
+    (ml/train
+     (:train split)
+     {:model-type :scicloj.ml.tribuo/classification
+      :tribuo-components [{:name "random-forest"
+                           :target-columns [:next-predicted-buy]
+                           :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                           :properties {:maxDepth "11" ;; pro 11 je to 14.9
+                                        :useRandomSplitPoints "true"
+                                        :fractionFeaturesInSplit "1"}}]
+      :tribuo-trainer-name "random-forest"})))
 
 
-(def svm-model
-  (ml/train
-   (:train split)
-   {:model-type :scicloj.ml.tribuo/classification
-    :tribuo-components [{:name "svm"
-                         :target-columns [:next-predicted-buy]
-                         :type "org.tribuo.classification.libsvm.LibSVMClassificationTrainer"
-                         :properties {:svmType "C_SVC"
-                                      :kernelType "RBF"
-                                      :gamma "0.1"
-                                      :cost "1.0"}}]
-    :tribuo-trainer-name "svm"}))
+(comment
+  (loss/classification-accuracy
+   (ds/column (:test split)
+              :next-predicted-buy)
+   (ds/column (ml/predict (:test split) rf-model)
+              :next-predicted-buy))
+  )
+
+(comment
+  (def rf2-model
+    (ml/train
+     (:train split)
+     {:model-type :scicloj.ml.tribuo/classification
+      :tribuo-components [{:name "random-forest"
+                           :target-columns [:next-predicted-buy]
+                           :type "org.tribuo.common.tree.RandomForestTrainer"
+                           :properties {:numMembers "100"
+                                        :seed "42"
+                                        :innerTrainer "inner-trainer"
+                                        :combiner "voting-combiner"}}
+                          {:name "inner-trainer"
+                           :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
+                           :properties {:maxDepth "10"
+                                        :useRandomSplitPoints "false"
+                                        :fractionFeaturesInSplit "0.5"}}
+                          {:name "voting-combiner"
+                           :type "org.tribuo.classification.ensemble.VotingCombiner"}]
+      :tribuo-trainer-name "random-forest"}))
+  )
+
+
+(comment
+  (def svm-model
+    (ml/train
+     (:train split)
+     {:model-type :scicloj.ml.tribuo/classification
+      :tribuo-components [{:name "svm"
+                           :target-columns [:next-predicted-buy]
+                           :type "org.tribuo.classification.libsvm.LibSVMClassificationTrainer"
+                           :properties {:svmType "C_SVC"
+                                        :kernelType "RBF"
+                                        :gamma "0.1"
+                                        :cost "1.0"}}]
+      :tribuo-trainer-name "svm"}))
+  )
 
 
 
@@ -231,7 +184,7 @@ split
 
 
 
-(def xgboost-classification-model
+(comment (def xgboost-classification-model
   (ml/train
    (:train split)
    {:model-type :scicloj.ml.tribuo/classification
@@ -246,13 +199,14 @@ split
                                       :minChildWeight "1"
                                       :lambda "1.0"
                                       :alpha "0.0"}}]
-    :tribuo-trainer-name "xgboost-classification"}))
+    :tribuo-trainer-name "xgboost-classification"})))
 
-(loss/classification-accuracy
- (ds/column (:test split)
-            :next-predicted-buy)
- (ds/column (ml/predict (:test split) xgboost-classification-model)
-            :next-predicted-buy))
+(comment
+  (loss/classification-accuracy
+   (ds/column (:test split)
+              :next-predicted-buy)
+   (ds/column (ml/predict (:test split) xgboost-classification-model)
+              :next-predicted-buy)))
 
 
 (comment
@@ -280,21 +234,10 @@ split
                                         :epsilon "0.01"}}]
       :tribuo-trainer-name "logistic-regression"})))
 
-;; # Make predictions
-(def predictions
-  (ml/predict (:test split) rf-model))
 
-(def accuracy
-  (loss/classification-accuracy
-   (ds/column (:test split) :next-predicted-buy)
-   (ds/column predictions :next-predicted-buy)))
+;; # Doporučení s modelem a bez
 
-accuracy
-
-
-;; # Předpovědi a doporučení
-
-
+;; ## Nejdříve s modelem
 (defn better-model-predict [model input-books & {:keys [top-k] :or {top-k 3}}]
   "Lepší přístup - najde zákazníky s podobnými knihami a podívá se, co si ještě koupili."
   (let [input-book-keywords (set (map #(if (keyword? %) % (keyword %)) input-books))
@@ -386,41 +329,20 @@ accuracy
 
     top-recommendations))
 
-;; Test obou přístupů
-(defn hybrid-recommend [model input-books & {:keys [top-k cf-weight model-weight]
-                                             :or {top-k 5 cf-weight 0.7 model-weight 0.3}}]
-  "Kombinuje collaborative filtering s model-based doporučením."
-  (let [cf-results (collaborative-recommend input-books :top-k (* 2 top-k))
-        model-results (better-model-predict model input-books :top-k (* 2 top-k))
 
-        ;; Kombinujeme skóre
-        all-books (into #{} (concat (map :book cf-results)
-                                    (map :book model-results)))
+;;  ## === Model-based recommendation ===
 
-        combined-scores (for [book all-books]
-                          (let [cf-prob (or (:probability (first (filter #(= (:book %) book) cf-results))) 0.0)
-                                model-prob (or (:probability (first (filter #(= (:book %) book) model-results))) 0.0)
-                                combined-prob (+ (* cf-weight cf-prob) (* model-weight model-prob))]
-                            {:book book :probability combined-prob}))
+(better-model-predict xgboost-simple-model [:telo-scita-rany] :top-k 5)
 
-        ;; Seřadíme a vezmeme top-k
-        top-recommendations (->> combined-scores
-                                 (sort-by :probability >)
-                                 (take top-k))]
+;; ### Test s více knihami
 
-    top-recommendations))
-(println "=== Model-based recommendation ===")
+(better-model-predict xgboost-simple-model [:jak-zabranit-dalsi-pandemii :vas-kapesni-terapeut] :top-k 5)
 
-(better-model-predict xgboost-simple-model [:nexus] :top-k 5)
-(println "\n=== Collaborative filtering ===")
+;; ## === Collaborative filtering ===
 
-;; Test s více knihami
-(collaborative-recommend [:nexus] :top-k 5)
-(println "\n=== Test s více knihami ===")
+(collaborative-recommend [:konec-prokrastinace] :top-k 5)
 
+;; ### Test s více knihami
 
+(collaborative-recommend [:jak-sbalit-zenu-2.0 :rozchazeni] :top-k 5)
 
-(collaborative-recommend [:prezit :sport-je-bolest] :top-k 5)
-
-;; Test hybrid přístupu
-(hybrid-recommend xgboost-simple-model [:nexus] :top-k 5)
