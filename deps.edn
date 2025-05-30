@@ -1,4 +1,5 @@
 {:deps {org.scicloj/noj {:mvn/version "2-beta18"}
         org.scicloj/metamorph.ml {:mvn/version "1.2.1"}
         #_#_org.scicloj/sklearn-clj {:mvn/version "0.5"}}
- :paths ["notebooks"]}
+ :paths ["notebooks"]
+ :exec-fn ["borkdude.unused-deps/exec-fn"]}

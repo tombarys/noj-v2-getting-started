@@ -336,7 +336,7 @@
 
 ;; ### Test s více knihami
 
-(better-model-predict xgboost-simple-model [:jak-zabranit-dalsi-pandemii :vas-kapesni-terapeut] :top-k 5)
+(better-model-predict xgboost-simple-model [:jed-dal :krad-jako-umelec :ukaz-co-delas!] :top-k 5)
 
 ;; ## === Collaborative filtering ===
 
@@ -344,5 +344,5 @@
 
 ;; ### Test s více knihami
 
-(collaborative-recommend [:jak-sbalit-zenu-2.0 :rozchazeni] :top-k 5)
+(collaborative-recommend [:jed-dal :krad-jako-umelec :ukaz-co-delas!] :top-k 5)
 
