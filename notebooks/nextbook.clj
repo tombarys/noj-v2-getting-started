@@ -28,9 +28,8 @@
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
              {:header? true :separator ","
               :column-allowlist ["Produkt (produkty)" "Zákazník"]
-              :num-rows 1000
+              #_#_:num-rows 10000
               :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
-
 
 (kind/table
  (tc/info raw-ds))
@@ -52,7 +51,7 @@
        distinct
        (mapv keyword)))
 
-
+;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
 (defn create-one-hot-encoding [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
         customer-books (-> raw-ds
@@ -86,7 +85,8 @@
                          (tc/rows customer-books :as-maps))
 
         ;; Vytvoříme nový dataset z one-hot dat
-        one-hot-ds (tc/dataset rows-with-books)]
+        one-hot-ds (tc/dataset rows-with-books)
+        _ (println "Zákošů s více než 1 knihou je: " (ds/row-count rows-with-books))]
 
     ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
     (-> one-hot-ds
@@ -94,73 +94,17 @@
         #_(ds/drop-columns [:zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
+
+;; ## Splitnutí datasetu pro další zpracování
+
 (def processed-ds (create-one-hot-encoding raw-ds))
 
-(kind/table
- (ds/sample processed-ds 20))
-
 (def split
-  (first
-   (tc/split->seq processed-ds :holdout {:seed 42})))
+  (-> processed-ds
+      (tc/split->seq  :holdout {:seed 42})
+      first))
 
-(comment (def rf-model
-           (ml/train
-            (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "random-forest"
-                                  :target-columns [:next-predicted-buy]
-                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                                  :properties {:maxDepth "11" ;; pro 11 je to 14.9
-                                               :useRandomSplitPoints "true"
-                                               :fractionFeaturesInSplit "1"}}]
-             :tribuo-trainer-name "random-forest"}))
-         )
-
-
-(comment (def rf2-model
-           (ml/train
-            (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "random-forest"
-                                  :target-columns [:next-predicted-buy]
-                                  :type "org.tribuo.common.tree.RandomForestTrainer"
-                                  :properties {:numMembers "100"
-                                               :seed "42"
-                                               :innerTrainer "inner-trainer"
-                                               :combiner "voting-combiner"}}
-                                 {:name "inner-trainer"
-                                  :type "org.tribuo.classification.dtree.CARTClassificationTrainer"
-                                  :properties {:maxDepth "10"
-                                               :useRandomSplitPoints "false"
-                                               :fractionFeaturesInSplit "0.5"}}
-                                 {:name "voting-combiner"
-                                  :type "org.tribuo.classification.ensemble.VotingCombiner"}]
-             :tribuo-trainer-name "random-forest"}))
-         )
-
-(comment (loss/classification-accuracy
-          (ds/column (:test split)
-                     :next-predicted-buy)
-          (ds/column (ml/predict (:test split) rf-model)
-                     :next-predicted-buy))
-         )
-
-
-(comment (def svm-model
-           (ml/train
-            (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "svm"
-                                  :target-columns [:next-predicted-buy]
-                                  :type "org.tribuo.classification.libsvm.LibSVMClassificationTrainer"
-                                  :properties {:svmType "C_SVC"
-                                               :kernelType "RBF"
-                                               :gamma "0.1"
-                                               :cost "1.0"}}]
-             :tribuo-trainer-name "svm"}))
-         )
-
-(def xgboost-simple-model ;; taky funguje
+(def xgboost-simple-model ;; funguje
   (ml/train
    (:train split)
    {:model-type :scicloj.ml.tribuo/classification
@@ -179,64 +123,13 @@
             :next-predicted-buy))
 
 
+;; # Nyní přicházejí reccomendations 
 
-(comment (def xgboost-classification-model
-           (ml/train
-            (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "xgboost-classification"
-                                  :target-columns [:next-predicted-buy]
-                                  :type "org.tribuo.classification.xgboost.XGBoostClassificationTrainer"
-                                  :properties {:numTrees "100"
-                                               :maxDepth "10"
-                                               :eta "0.3"
-                                               :subsample "1.0"
-                                               :gamma "0.0"
-                                               :minChildWeight "1"
-                                               :lambda "1.0"
-                                               :alpha "0.0"}}]
-             :tribuo-trainer-name "xgboost-classification"})))
-
-(comment (loss/classification-accuracy
-          (ds/column (:test split)
-                     :next-predicted-buy)
-          (ds/column (ml/predict (:test split) xgboost-classification-model)
-                     :next-predicted-buy))
-         )
-
-
-(comment (def nb-model
-           (ml/train
-            (:train split)
-            {:model-type :scicloj.ml.tribuo/classification
-             :tribuo-components [{:name "naive-bayes"
-                                  :target-columns [:next-predicted-buy]
-                                  :type "org.tribuo.classification.mnb.MultinomialNaiveBayesTrainer"
-                                  :properties {:alpha "1.0"}}]
-             :tribuo-trainer-name "naive-bayes"}))
-         )
-
-
-(comment  (def lr-model
-            (ml/train
-             (:train split)
-             {:model-type :scicloj.ml.tribuo/classification
-              :tribuo-components [{:name "logistic-regression"
-                                   :target-columns [:next-predicted-buy]
-                                   :type "org.tribuo.classification.liblinear.LibLinearClassificationTrainer"
-                                   :properties {:solverType "L2R_LR"
-                                                :cost "1.0"
-                                                :epsilon "0.01"}}]
-              :tribuo-trainer-name "logistic-regression"}))
-          )
-
-
-;; # Doporučení s modelem a bez
-
-;; ## Nejdříve s modelem
-(defn better-model-predict
-  "Lepší přístup - najde zákazníky s podobnými knihami a podívá se, co si ještě koupili."
+;; ## Nejdříve s jednoduchým modelem
+(defn basic-prediction-model
+  "Najde zákazníky s podobnými knihami a podívá se, co si ještě koupili."
   [model input-books & {:keys [top-k] :or {top-k 3}}]
+  (println "\n== Basic prediction model ==\nInput books: " input-books)
   (let [input-book-keywords (set (map #(if (keyword? %) % (keyword %)) input-books))
         all-books (->> (ds/column-names processed-ds)
                        (remove #{:zakaznik :next-predicted-buy})
@@ -245,19 +138,28 @@
         ;; Ověříme, jestli vstupní knihy existují
         found-books (filter #(contains? all-books %) input-book-keywords)
 
-        _ (println "Nalezené knihy:" found-books)
-
         ;; Najdeme všechny řádky, kde zákazník má alespoň jednu ze vstupních knih
         train-rows (tc/rows (:train split) :as-maps)
+        ;; Nejdříve najdeme řádky s VŠEMI vstupními knihami
+        perfect-matching-rows (->> train-rows
+                                   (filter (fn [row] ;; Zákazník má VŠECHNY hledané knihy
+                                             (every? #(= 1 (get row % 0)) found-books)))
+                                   (filter (fn [row] ;; Target kniha není jedna z vstupních knih
+                                             (not (contains? input-book-keywords (:next-predicted-buy row))))))
 
-        matching-rows (->> train-rows
-                           (filter (fn [row]
-                                     ;; Zákazník má alespoň jednu z hledaných knih
-                                     (some #(= 1 (get row % 0)) found-books)))
-                           (filter (fn [row]
-                                     ;; Target kniha není jedna z vstupních knih
-                                     (not (contains? input-book-keywords (:next-predicted-buy row))))))
+        ;; Pokud nemáme dostatek perfektních matchů, přidáme částečné
+        partial-matching-rows (if (>= (count perfect-matching-rows) 10) ; práh pro "dostatek" dat
+                                []
+                                (->> train-rows
+                                     (filter (fn [row] ;; Zákazník má alespoň jednu z hledaných knih
+                                               (some #(= 1 (get row % 0)) found-books)))
+                                     (filter (fn [row] ;; Ale nemá všechny (abychom se vyhnuli duplikátům)
+                                               (not (every? #(= 1 (get row % 0)) found-books))))
+                                     (filter (fn [row] ;; Target kniha není jedna z vstupních knih
+                                               (not (contains? input-book-keywords (:next-predicted-buy row)))))))
 
+        ;; Kombinujeme řádky s prioritou pro perfektní shody
+        matching-rows (concat perfect-matching-rows partial-matching-rows)
         _ (println "Počet matching řádků:" (count matching-rows))
 
         ;; Místo úpravy vzorců použijeme model přímo na tyto řádky
@@ -269,7 +171,8 @@
                                     predicted-book (-> prediction
                                                        (ds/column :next-predicted-buy)
                                                        first)]
-                                predicted-book)                                 (catch Exception _e nil)))
+                                predicted-book)
+                              (catch Exception _e nil)))
 
         ;; Spočítáme frekvence
         valid-predictions (remove nil? model-predictions)
@@ -298,6 +201,7 @@
 (defn collaborative-recommend
   "Jednoduché collaborative filtering - najde podobné zákazníky a podívá se, co si koupili."
   [input-books & {:keys [top-k] :or {top-k 3}}]
+  (println "\n== Collaborative filtering ==")
   (let [input-book-keywords (set (map #(if (keyword? %) % (keyword %)) input-books))
 
         ;; Najdeme zákazníky, kteří mají alespoň jednu z vstupních knih
@@ -310,7 +214,7 @@
                                (map :zakaznik)
                                distinct)
 
-        _ (println "\n---\nPočet podobných zákazníků:" (count similar-customers))
+        _ (println "\nPočet podobných zákazníků:" (count similar-customers))
 
         ;; Najdeme všechny knihy, které si tito zákazníci koupili
         books-bought-by-similar (->> train-rows
@@ -334,21 +238,21 @@
 
 ;;  ## === Model-based recommendation ===
 
-(better-model-predict xgboost-simple-model [:telo-scita-rany] :top-k 5)
+(basic-prediction-model xgboost-simple-model [:jak-si-delat-chytre-poznamky] :top-k 5)
 
 ;; ### Test s více knihami
 
-(better-model-predict xgboost-simple-model [:jed-dal :krad-jako-umelec :ukaz-co-delas!] :top-k 5)
+(basic-prediction-model xgboost-simple-model [:krad-jako-umelec :ukaz-co-delas!] :top-k 5)
 
 ;; ## === Collaborative filtering ===
 
-(collaborative-recommend [:konec-prokrastinace] :top-k 5)
+(collaborative-recommend [:jak-si-delat-chytre-poznamky] :top-k 5)
 
 ;; ### Test s více knihami
 
-(collaborative-recommend [:jed-dal :krad-jako-umelec :ukaz-co-delas!] :top-k 5)
+(collaborative-recommend [:uz-zadne-drama :rozchazeni] :top-k 5)
 
-;; ## === Simplified Pipeline-based approach ===
+;; # === Simplified Pipeline-based approach ===
 
 ;; Jednoduchý pipeline wrapper pro training a prediction
 (defn train-model-pipeline
@@ -390,7 +294,7 @@
 
 (println "Pipeline accuracy:" pipeline-accuracy)
 
-;; ## === Proper Metamorph Pipeline Implementation ===
+;; # === Proper Metamorph Pipeline Implementation ===
 
 ;; Define proper metamorph pipeline for training and prediction
 (def book-recommendation-pipeline
@@ -513,7 +417,7 @@
 
 ;; Testování metamorph pipeline doporučení
 
-(metamorph-pipeline-recommend [:atomove-navyky])
+(metamorph-pipeline-recommend [:uz-zadne-drama :rozchazeni])
 
 (metamorph-pipeline-recommend [:nexus])
 
