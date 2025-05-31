@@ -1,3 +1,4 @@
-{:deps {io.github.borkdude/unused-deps {:local/root "."}}
- :bbin/bin {unused-deps {:main-opts ["-x" "borkdude.unused-deps/exec-fn"]}}
- :tasks {unused-deps {:task (prn (exec 'borkdude.unused-deps/unused-deps))}}}
+{:deps {io.github.borkdude/unused-deps {:git/sha "77fc627b3a0dc547841a17bdaa09ea51c392676c"}}
+ :tasks
+ {unused-deps {:doc "Find unused dependencies"
+               :task (exec 'borkdude.unused-deps/unused-deps)}}}
