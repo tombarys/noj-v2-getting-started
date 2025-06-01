@@ -250,7 +250,7 @@
 
 ;; ### Test s více knihami
 
-(collaborative-recommend [:uz-zadne-drama :rozchazeni] :top-k 5)
+(collaborative-recommend [:spotify :jak-na-site] :top-k 5)
 
 ;; # === Simplified Pipeline-based approach ===
 
@@ -370,6 +370,7 @@
 (defn metamorph-pipeline-recommend
   "Doporučení knih s použitím proper metamorph pipeline"
   [input-books & {:keys [top-k] :or {top-k 5}}]
+  (println "\n== Metamorph Pipeline doporučení pro " input-books " ==")
   (let [input-book-keywords (set (map #(if (keyword? %) % (keyword %)) input-books))
         all-books (->> (ds/column-names processed-ds)
                        (remove #{:zakaznik :next-predicted-buy})
@@ -410,14 +411,14 @@
         ;; Vrátíme top-k doporučení
         top-recommendations (take top-k
                                   (sort-by second > recommendation-frequencies))]
-    (println "Metamorph Pipeline doporučení pro" input-books ":")
+    
     (doseq [[book freq] top-recommendations]
       (println " -" book "(" freq "krát doporučeno)"))
     (map first top-recommendations)))
 
 ;; Testování metamorph pipeline doporučení
 
-(metamorph-pipeline-recommend [:uz-zadne-drama :rozchazeni])
+(metamorph-pipeline-recommend [:spotify :jak-na-site])
 
 (metamorph-pipeline-recommend [:nexus])
 
