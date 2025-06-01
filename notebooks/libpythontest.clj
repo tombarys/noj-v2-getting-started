@@ -1,6 +1,16 @@
 (ns libpythontest
   (:require
    [libpython-clj2.python :as py :refer [py. py.. py.- get-attr call-attr get-item]]
+   [scicloj.ml.core :as ml]
+   [scicloj.ml.metamorph :as mm]
+   [scicloj.sklearn-clj :refer :all]
+   [scicloj.ml.dataset :as ds]
+   [tech.v3.dataset.tensor :as dst]
+   [scicloj.sklearn-clj :as sklearn-clj]
+   [scicloj.sklearn-clj.ml]
+   [tech.v3.dataset :as ds]
+   [tech.v3.dataset.modelling :as ds-mod]
+   [scicloj.metamorph.ml.toydata :as toydata]
    [libpython-clj2.require :refer [require-python]]))
 
 
