@@ -1,5 +1,7 @@
 {:deps {org.scicloj/noj {:mvn/version "2-beta18"}
         org.scicloj/metamorph.ml {:mvn/version "1.2.1"}
+        ;; sklearn-clj commented out due to Python path issues
+        #_scicloj/sklearn-clj #_{:mvn/version "0.3.0"}
         #_#_org.scicloj/sklearn-clj {:mvn/version "0.5"}}
  :paths ["notebooks"]
  :exec-fn ["borkdude.unused-deps/exec-fn"]}
