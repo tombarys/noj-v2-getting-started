@@ -1,4 +1,4 @@
-(ns nextbook
+(ns nextboox2
   (:require
    [tech.v3.dataset :as ds]
    [scicloj.ml.tribuo]
@@ -414,7 +414,7 @@
         ;; Vrátíme top-k doporučení
         top-recommendations (take top-k
                                   (sort-by second > recommendation-frequencies))]
-    
+
     (doseq [[book freq] top-recommendations]
       (println " -" book "(" freq "krát doporučeno)"))
     (map first top-recommendations)))
