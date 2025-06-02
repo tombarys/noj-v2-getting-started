@@ -125,4 +125,6 @@ processed-ds
 (def log-reg
   (fit (:train split) :sklearn.neighbors :k-neighbors-classifier))
 
-(->> (predict (:test split) log-reg))
+(->> (predict (-> (ds/->dataset {:konec-prokrastinace 1})
+                  (ds/add-column [:next-predicted-buy])
+                  (ds-mod/set-inference-target [:next-predicted-buy])) log-reg))
