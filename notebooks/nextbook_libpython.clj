@@ -5,7 +5,8 @@
    [tablecloth.api :as tc]
    [clojure.string :as str]
    [tech.v3.dataset.modelling :as ds-mod]
-   [scicloj.sklearn-clj :refer [fit predict]])
+   [scicloj.sklearn-clj :refer [fit predict]]
+   [scicloj.metamorph.ml.loss :as loss])
   (:import [java.text Normalizer Normalizer$Form]))
 
 
@@ -124,36 +125,13 @@ processed-ds
 
 
 (def log-reg
-  (fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:n_neighbors 3}))
+  (fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:n_neighbors 4}))
 
-;; Vytvoření prázdného datasetu se všemi sloupci jako v trénovacích datech
-(def prediction-sample
-  (let [all-columns (tc/column-names (:train split))
-        feature-columns (remove #(= % :next-predicted-buy) all-columns)
-        zero-map (zipmap feature-columns (repeat 0))
-        input-data (merge zero-map {:konec-prokrastinace 1
-                                    :atomove-navyky 1})]
-    (-> (ds/->dataset [input-data])
-        (tc/add-column :next-predicted-buy [0])
-        (ds-mod/set-inference-target [:next-predicted-buy]))))
-
-;; Provedení predikce a převod na názvy knih pomocí metadata
-(def raw-prediction (predict prediction-sample log-reg))
-
-raw-prediction
-
-;; Převod číselných predikcí zpět na názvy knih pomocí metadata z trénovacích dat
-(def predicted-books 
-  (let [target-column (ds/column (:train split) :next-predicted-buy)
-        target-meta (meta target-column)
-        lookup-table (:categorical-map target-meta)
-        actual-mapping (second (first lookup-table))
-        reverse-mapping (into {} (map (fn [[k v]] [v k]) actual-mapping))
-        predicted-numbers (ds/column raw-prediction :next-predicted-buy)]
-    (mapv #(get reverse-mapping (int %)) predicted-numbers)))
-
-(println "Predicted books:")
-predicted-books
+(loss/classification-accuracy
+ (-> (ds/column (:test split) :next-predicted-buy)
+     (vary-meta dissoc :categorical-map))  ; <- odstraní categorical metadata
+ (ds/column (predict (:test split) log-reg)
+            :next-predicted-buy))
 
 ;; Helper funkce pro predikce
 (defn predict-next-book 
@@ -175,6 +153,7 @@ predicted-books
         predicted-numbers (ds/column raw-pred :next-predicted-buy)]
     (mapv #(get reverse-mapping (int %)) predicted-numbers)))
 
+
+
 ;; Test funkce
-(def test-prediction (predict-next-book [:konec-prokrastinace :atomove-navyky]))
-(println "Test prediction:" test-prediction)
+(predict-next-book [:konec-prokrastinace])
