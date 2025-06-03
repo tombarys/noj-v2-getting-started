@@ -1,15 +1,19 @@
 (ns nextbook-libpython
   (:require
+   [libpython-clj2.python :as py]
    [tech.v3.dataset :as ds]
    [scicloj.kindly.v4.kind :as kind]
    [tablecloth.api :as tc]
    [clojure.string :as str]
    [tech.v3.dataset.modelling :as ds-mod]
    [tech.v3.dataset.categorical :as cat-mod]
-   [scicloj.sklearn-clj :refer [fit predict]]
-   [scicloj.metamorph.ml.loss :as loss])
+   [scicloj.metamorph.ml.loss :as loss]
+   [scicloj.sklearn-clj :as sk-clj]
+   [scicloj.sklearn-clj.ml])
   (:import [java.text Normalizer Normalizer$Form]))
+        
 
+(py/initialize!)
 
 (defn sanitize-column-name-str [s]
   (if (or (nil? s) (empty? s))
@@ -126,12 +130,12 @@ processed-ds
 
 
 (def log-reg
-  (fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:n_neighbors 4}))
+  (sk-clj/fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:n_neighbors 4}))
 
 (loss/classification-accuracy
  (-> (ds/column (:test split) :next-predicted-buy)
      (vary-meta dissoc :categorical-map))  ; <- odstraní categorical metadata
- (ds/column (predict (:test split) log-reg)
+ (ds/column (sk-clj/predict (:test split) log-reg)
             :next-predicted-buy))
 
 ;; Helper funkce pro predikce
@@ -145,7 +149,7 @@ processed-ds
         input (-> (ds/->dataset [input-data])
                   (tc/add-column :next-predicted-buy [0])
                   (ds-mod/set-inference-target [:next-predicted-buy]))
-        raw-pred (predict input log-reg)
+        raw-pred (sk-clj/predict input log-reg)
         _ (println raw-pred)
         #_#_target-column (ds/column (:train split) :next-predicted-buy)
         reverse-mapping (cat-mod/reverse-map-categorical-xforms raw-pred)
