@@ -5,6 +5,7 @@
    [tablecloth.api :as tc]
    [clojure.string :as str]
    [tech.v3.dataset.modelling :as ds-mod]
+   [tech.v3.dataset.categorical :as cat-mod]
    [scicloj.sklearn-clj :refer [fit predict]]
    [scicloj.metamorph.ml.loss :as loss])
   (:import [java.text Normalizer Normalizer$Form]))
@@ -141,19 +142,15 @@ processed-ds
         feature-columns (remove #(= % :next-predicted-buy) all-columns)
         zero-map (zipmap feature-columns (repeat 0))
         input-data (merge zero-map (zipmap owned-books (repeat 1)))
-        sample (-> (ds/->dataset [input-data])
-                   (tc/add-column :next-predicted-buy [0])
-                   (ds-mod/set-inference-target [:next-predicted-buy]))
-        raw-pred (predict sample log-reg)
-        target-column (ds/column (:train split) :next-predicted-buy)
-        target-meta (meta target-column)
-        lookup-table (:categorical-map target-meta)
-        actual-mapping (second (first lookup-table))
-        reverse-mapping (into {} (map (fn [[k v]] [v k]) actual-mapping))
-        predicted-numbers (ds/column raw-pred :next-predicted-buy)]
-    (mapv #(get reverse-mapping (int %)) predicted-numbers)))
-
-
+        input (-> (ds/->dataset [input-data])
+                  (tc/add-column :next-predicted-buy [0])
+                  (ds-mod/set-inference-target [:next-predicted-buy]))
+        raw-pred (predict input log-reg)
+        _ (println raw-pred)
+        #_#_target-column (ds/column (:train split) :next-predicted-buy)
+        reverse-mapping (cat-mod/reverse-map-categorical-xforms raw-pred)
+        #_#_predicted-numbers (ds/column raw-pred :next-predicted-buy)]
+    reverse-mapping))
 
 ;; Test funkce
-(predict-next-book [:konec-prokrastinace])
+(predict-next-book [:ukaz-co-delas!])
