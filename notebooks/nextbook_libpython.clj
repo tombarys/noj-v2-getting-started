@@ -5,7 +5,8 @@
    [tablecloth.api :as tc]
    [clojure.string :as str]
    [tech.v3.dataset.modelling :as ds-mod]
-   [scicloj.sklearn-clj :refer :all])
+   [tech.v3.dataset.categorical :as ds-cat]
+   [scicloj.sklearn-clj :refer [fit predict]])
   (:import [java.text Normalizer Normalizer$Form]))
 
 
@@ -87,19 +88,24 @@
 
     ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
     (-> one-hot-ds
-        (ds/categorical->number [:zakaznik :next-predicted-buy])
-        #_(ds/drop-columns [:zakaznik])
+        (ds/drop-columns [:zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
-
-;; ## Splitnutí datasetu pro další zpracování
-
+;; Nejdříve vytvoříme base dataset z one-hot encoding
 (def processed-ds (create-one-hot-encoding raw-ds))
 
 processed-ds
 
+;; Vytvoříme categorical mapu pro převody
+(def categorical-maps
+  (ds-cat/fit-categorical-map processed-ds :next-predicted-buy))
+
+;; Aplikujeme categorical transformaci
+(def processed-ds-numeric
+  (ds-cat/transform-categorical-map processed-ds categorical-maps))
+
 (def split
-  (-> processed-ds
+  (-> processed-ds-numeric
       (tc/split->seq  :holdout {:seed 42})
       first))
 
@@ -129,13 +135,29 @@ processed-ds
 (def prediction-sample
   (let [all-columns (tc/column-names (:train split))
         feature-columns (remove #(= % :next-predicted-buy) all-columns)
-        ; Vytvoření mapy s nulami pro všechny feature sloupce
         zero-map (zipmap feature-columns (repeat 0))
-        ; Nastavení konkrétních knih na 1 (simulace nákupu)
-        sample-data (merge zero-map {:konec-prokrastinace 1
-                                    :atomove-navyky 1})]
-    (-> (ds/->dataset [sample-data])
-        (tc/add-column :next-predicted-buy [0])
+        input-data (merge zero-map {:konec-prokrastinace 1
+                                    :atomove-navyky 1})
+        ; Vytvoření base datasetu
+        base-ds (-> (ds/->dataset [input-data])
+                    (tc/add-column :next-predicted-buy [:placeholder]))]
+    ; Aplikujeme stejnou categorical transformaci jako na trénovací data
+    (-> base-ds
+        (ds-cat/transform-categorical-map categorical-maps)
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
-(->> (predict prediction-sample log-reg))
+;; Funkce pro převod číselných predikcí zpět na názvy knih
+(defn convert-predictions-to-books [predictions]
+  (let [target-categorical-map (get categorical-maps :next-predicted-buy)
+        reverse-mapping (into {} (map (fn [[k v]] [v k]) target-categorical-map))
+        predicted-numbers (ds/column predictions :target)]
+    (mapv #(get reverse-mapping (int %)) predicted-numbers)))
+
+
+
+;; Provedení predikce a převod na názvy knih
+(def raw-prediction (predict prediction-sample log-reg))
+(def predicted-books (convert-predictions-to-books raw-prediction))
+
+(println "Predicted books:")
+predicted-books
