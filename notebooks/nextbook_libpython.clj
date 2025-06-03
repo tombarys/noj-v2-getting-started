@@ -123,8 +123,19 @@ processed-ds
 
 
 (def log-reg
-  (fit (:train split) :sklearn.neighbors :k-neighbors-classifier))
+  (fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:n_neighbors 3}))
 
-(->> (predict (-> (ds/->dataset {:konec-prokrastinace 1})
-                  (ds/add-column [:next-predicted-buy])
-                  (ds-mod/set-inference-target [:next-predicted-buy])) log-reg))
+;; Vytvoření prázdného datasetu se všemi sloupci jako v trénovacích datech
+(def prediction-sample
+  (let [all-columns (tc/column-names (:train split))
+        feature-columns (remove #(= % :next-predicted-buy) all-columns)
+        ; Vytvoření mapy s nulami pro všechny feature sloupce
+        zero-map (zipmap feature-columns (repeat 0))
+        ; Nastavení konkrétních knih na 1 (simulace nákupu)
+        sample-data (merge zero-map {:konec-prokrastinace 1
+                                    :atomove-navyky 1})]
+    (-> (ds/->dataset [sample-data])
+        (tc/add-column :next-predicted-buy [0])
+        (ds-mod/set-inference-target [:next-predicted-buy]))))
+
+(->> (predict prediction-sample log-reg))
