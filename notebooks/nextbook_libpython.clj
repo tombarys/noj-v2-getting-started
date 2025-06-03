@@ -1,17 +1,20 @@
 (ns nextbook-libpython
-  (:require
-   [libpython-clj2.python :as py]
-   [tech.v3.dataset :as ds]
-   [scicloj.kindly.v4.kind :as kind]
-   [tablecloth.api :as tc]
-   [clojure.string :as str]
-   [tech.v3.dataset.modelling :as ds-mod]
-   [tech.v3.dataset.categorical :as cat-mod]
-   [scicloj.metamorph.ml.loss :as loss]
-   [scicloj.sklearn-clj :as sk-clj]
-   [scicloj.sklearn-clj.ml])
-  (:import [java.text Normalizer Normalizer$Form]))
-        
+   (:import [java.text Normalizer Normalizer$Form]))
+ 
+ (require
+  '[libpython-clj2.python :as py]
+  '[tech.v3.dataset :as ds]
+  '[scicloj.kindly.v4.kind :as kind]
+  '[tablecloth.api :as tc]
+  '[clojure.string :as str]
+  '[tech.v3.dataset.modelling :as ds-mod]
+  '[tech.v3.dataset.categorical :as cat-mod]
+  '[scicloj.metamorph.ml.loss :as loss])
+ 
+ (require
+  '[scicloj.sklearn-clj :as sk-clj]
+  '[scicloj.sklearn-clj.ml :as ml])
+
 
 (py/initialize!)
 
@@ -111,22 +114,22 @@ processed-ds
       first))
 
 #_(def xgboost-simple-model ;; funguje
-  (ml/train
-   (:train split)
-   {:model-type :scicloj.ml.tribuo/classification
-    :tribuo-components [{:name "xgboost-simple"
-                         :target-columns [:next-predicted-buy]
-                         :type "org.tribuo.classification.xgboost.XGBoostClassificationTrainer"
-                         :properties {:numTrees "100"
-                                      :maxDepth "6"
-                                      :eta "0.1"}}]
-    :tribuo-trainer-name "xgboost-simple"}))
+    (ml/train
+     (:train split)
+     {:model-type :scicloj.ml.tribuo/classification
+      :tribuo-components [{:name "xgboost-simple"
+                           :target-columns [:next-predicted-buy]
+                           :type "org.tribuo.classification.xgboost.XGBoostClassificationTrainer"
+                           :properties {:numTrees "100"
+                                        :maxDepth "6"
+                                        :eta "0.1"}}]
+      :tribuo-trainer-name "xgboost-simple"}))
 
 #_(loss/classification-accuracy
- (ds/column (:test split)
-            :next-predicted-buy)
- (ds/column (ml/predict (:test split) xgboost-simple-model)
-            :next-predicted-buy))
+   (ds/column (:test split)
+              :next-predicted-buy)
+   (ds/column (ml/predict (:test split) xgboost-simple-model)
+              :next-predicted-buy))
 
 
 (def log-reg
@@ -139,7 +142,7 @@ processed-ds
             :next-predicted-buy))
 
 ;; Helper funkce pro predikce
-(defn predict-next-book 
+(defn predict-next-book
   "Predikuje další knihu na základě vlastněných knih"
   [owned-books]
   (let [all-columns (tc/column-names (:train split))
