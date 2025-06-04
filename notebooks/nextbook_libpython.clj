@@ -146,12 +146,16 @@ processed-ds
   "Predikuje další knihu na základě vlastněných knih"
   [owned-books]
   (let [train-features (-> (:train split)
-                          (ds/drop-columns [:next-predicted-buy])
-                          tc/column-names)
+                           (ds/drop-columns [:next-predicted-buy])
+                           tc/column-names)
+        ; Filtrujeme pouze knihy, které existují v trénovacích datech
+        valid-books (filter #(contains? (set train-features) %) owned-books)
+        _ (when (empty? valid-books)
+            (println "Varování: Žádná z uvedených knih není v trénovacích datech"))
         zero-map (zipmap train-features (repeat 0))
-        input-data (merge zero-map (zipmap owned-books (repeat 1)))
+        input-data (merge zero-map (zipmap valid-books (repeat 1)))
         input-ds (-> (ds/->dataset [input-data])
-                     (tc/select-columns train-features)) ; Použít jen features z tréninku
+                     (ds-mod/set-inference-target [:next-predicted-buy]))
         raw-pred (sk-clj/predict input-ds log-reg)
         predicted-numbers (ds/column raw-pred :next-predicted-buy)
         target-column (ds/column (:train split) :next-predicted-buy)
