@@ -1,23 +1,23 @@
 (ns nextbook-libpython
-   (:import [java.text Normalizer Normalizer$Form]))
- 
- (require
-  '[libpython-clj2.python :as py]
-  '[tech.v3.dataset :as ds]
-  '[scicloj.kindly.v4.kind :as kind]
-  '[tablecloth.api :as tc]
-  '[clojure.string :as str]
-  '[tech.v3.dataset.modelling :as ds-mod]
-  '[tech.v3.dataset.categorical :as cat-mod]
-  '[scicloj.metamorph.ml.loss :as loss])
- 
- (require
-  '[scicloj.sklearn-clj :as sk-clj]
-  '[scicloj.sklearn-clj.ml :as ml])
+  (:import [java.text Normalizer Normalizer$Form]))
 
+(require
+ '[libpython-clj2.python :as py]
+ '[tech.v3.dataset :as ds]
+ '[scicloj.kindly.v4.kind :as kind]
+ '[tablecloth.api :as tc]
+ '[clojure.string :as str]
+ '[tech.v3.dataset.modelling :as ds-mod]
+ '[tech.v3.dataset.categorical :as cat-mod]
+ '[scicloj.metamorph.ml.loss :as loss])
+
+(require
+ '[scicloj.sklearn-clj :as sk-clj]
+ '[scicloj.sklearn-clj.ml :as ml])
 
 (py/initialize!)
 
+;; Pomocné funkce
 (defn sanitize-column-name-str [s]
   (if (or (nil? s) (empty? s))
     s
@@ -145,18 +145,20 @@ processed-ds
 (defn predict-next-book
   "Predikuje další knihu na základě vlastněných knih"
   [owned-books]
-  (let [all-columns (tc/column-names (:train split))
-        feature-columns (remove #(= % :next-predicted-buy) all-columns)
-        zero-map (zipmap feature-columns (repeat 0))
+  (let [train-features (-> (:train split)
+                          (ds/drop-columns [:next-predicted-buy])
+                          tc/column-names)
+        zero-map (zipmap train-features (repeat 0))
         input-data (merge zero-map (zipmap owned-books (repeat 1)))
-        input (-> (ds/->dataset [input-data])
-                  (tc/add-column :next-predicted-buy [0])
-                  (ds-mod/set-inference-target [:next-predicted-buy]))
-        raw-pred (sk-clj/predict input log-reg)
-        _ (println raw-pred)
-        #_#_target-column (ds/column (:train split) :next-predicted-buy)
-        reverse-mapping (cat-mod/reverse-map-categorical-xforms raw-pred)
-        #_#_predicted-numbers (ds/column raw-pred :next-predicted-buy)]
+        input-ds (-> (ds/->dataset [input-data])
+                     (tc/select-columns train-features)) ; Použít jen features z tréninku
+        raw-pred (sk-clj/predict input-ds log-reg)
+        predicted-numbers (ds/column raw-pred :next-predicted-buy)
+        target-column (ds/column (:train split) :next-predicted-buy)
+        target-meta (meta target-column)
+        reverse-mapping (if-let [cat-map (:categorical-map target-meta)]
+                          (get cat-map (first predicted-numbers))
+                          (first predicted-numbers))]
     reverse-mapping))
 
 ;; Test funkce
