@@ -34,7 +34,7 @@
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
              {:header? true :separator ","
               :column-allowlist ["Produkt (produkty)" "Zákazník"]
-              #_#_:num-rows 100
+              :num-rows 500
               :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -141,29 +141,90 @@ processed-ds
  (ds/column (sk-clj/predict (:test split) log-reg)
             :next-predicted-buy))
 
+;; Helper funkce pro konverzi čísel zpět na kategorie
+(defn number->category 
+  "Převede číselné predikce zpět na kategorie pomocí categorical metadata"
+  [predicted-numbers target-column]
+  (let [cat-map (:categorical-map (meta target-column))
+        lookup-table (:lookup-table cat-map)]
+    (if lookup-table
+      ;; Vytvoříme inverzní mapu: číslo -> kategorie 
+      (let [inverse-map (into {} (map (fn [[category number]] [number category]) lookup-table))]
+        ;; Převedeme float hodnoty na int před hledáním v mapě
+        (mapv #(inverse-map (int %)) predicted-numbers))
+      ;; Pokud není k dispozici categorical mapping, vrátíme predikce tak jak jsou
+      (do 
+        (println "Varování: Categorical mapping není k dispozici, vracím číselné predikce")
+        predicted-numbers))))
+
 ;; Helper funkce pro predikce
 (defn predict-next-book
   "Predikuje další knihu na základě vlastněných knih"
   [owned-books]
-  (let [train-features (-> (:train split)
-                           (ds/drop-columns [:next-predicted-buy])
-                           tc/column-names)
-        ; Filtrujeme pouze knihy, které existují v trénovacích datech
-        valid-books (filter #(contains? (set train-features) %) owned-books)
-        _ (when (empty? valid-books)
-            (println "Varování: Žádná z uvedených knih není v trénovacích datech"))
-        zero-map (zipmap train-features (repeat 0))
-        input-data (merge zero-map (zipmap valid-books (repeat 1)))
-        input-ds (-> (ds/->dataset [input-data])
-                     (ds-mod/set-inference-target [:next-predicted-buy]))
-        raw-pred (sk-clj/predict input-ds log-reg)
-        predicted-numbers (ds/column raw-pred :next-predicted-buy)
-        target-column (ds/column (:train split) :next-predicted-buy)
-        target-meta (meta target-column)
-        reverse-mapping (if-let [cat-map (:categorical-map target-meta)]
-                          (get cat-map (first predicted-numbers))
-                          (first predicted-numbers))]
-    reverse-mapping))
+  (try
+    (let [train-features (-> (:train split)
+                             (ds/drop-columns [:next-predicted-buy])
+                             tc/column-names)
+          ; Filtrujeme pouze knihy, které existují v trénovacích datech
+          valid-books (filter #(contains? (set train-features) %) owned-books)
+          _ (when (empty? valid-books)
+              (println "Varování: Žádná z uvedených knih není v trénovacích datech"))
+          _ (println "Debug: valid-books count:" (count valid-books))
+          _ (println "Debug: train-features count:" (count train-features))
+          zero-map (zipmap train-features (repeat 0))
+          input-data (merge zero-map (zipmap valid-books (repeat 1)))
+          ;; Vytvoříme input dataset s placeholder target sloupcem a nastavíme inference target
+          full-input-data (assoc input-data :next-predicted-buy nil)
+          input-ds (-> (ds/->dataset [full-input-data])
+                       (ds-mod/set-inference-target [:next-predicted-buy]))
+          _ (println "Debug: input-ds columns:" (tc/column-names input-ds))
+          _ (println "Debug: input-ds shape:" [(ds/row-count input-ds) (ds/column-count input-ds)])
+          _ (println "Debug: input-ds inference-target?" (some #(:inference-target? (meta %)) (tc/columns input-ds)))
+          ;; Predikce pomocí sklearn modelu
+          raw-pred (sk-clj/predict input-ds log-reg)
+          _ (println "Debug: raw-pred columns:" (tc/column-names raw-pred))
+          predicted-numbers (ds/column raw-pred :next-predicted-buy)
+          _ (println "Debug: predicted-numbers:" predicted-numbers)
+          target-column (ds/column (:train split) :next-predicted-buy)
+          ;; Použijeme elegantní konverzi pomocí categorical metadata
+          predicted-categories (number->category predicted-numbers target-column)]
+      (first predicted-categories))
+    (catch Exception e
+      (println "Chyba v predict-next-book:" (.getMessage e))
+      (println "Stack trace:")
+      (.printStackTrace e)
+      nil)))
 
-;; Test funkce
-(predict-next-book [:ukaz-co-delas!])
+;; Zjistíme, jaké knihy jsou dostupné v trénovacích datech
+(def available-books 
+  (-> (:train split)
+      (ds/drop-columns [:next-predicted-buy])
+      tc/column-names
+      sort))
+
+;; Ukážeme prvních 10 dostupných knih
+(kind/hiccup [:div
+              [:h3 "Prvních 10 dostupných knih:"]
+              [:ul (for [book (take 10 available-books)]
+                     [:li (name book)])]])
+
+;; Test funkce s existující knihou
+(println "Test predikce s první dostupnou knihou:")
+(try
+  (let [test-book (first available-books)
+        prediction (predict-next-book [test-book])]
+    (println "Vstupní kniha:" (name test-book))
+    (println "Doporučená kniha:" (name prediction)))
+  (catch Exception e
+    (println "Chyba při predikci:" (.getMessage e))))
+
+;; Diagnostické informace o categorical metadata
+(let [target-col (ds/column (:train split) :next-predicted-buy)
+      target-meta (meta target-col)]
+  (println "\n=== Diagnostické informace ===")
+  (println "Target column metadata klíče:" (keys target-meta))
+  (when-let [cat-map (:categorical-map target-meta)]
+    (println "Categorical map klíče:" (keys cat-map))
+    (when-let [lookup (:lookup-table cat-map)]
+      (println "Počet kategorií v lookup table:" (count lookup))
+      (println "Prvních 5 kategorií:" (take 5 lookup)))))
