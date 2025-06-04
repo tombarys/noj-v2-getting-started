@@ -20,7 +20,7 @@
 (require
  '[scicloj.sklearn-clj :as sk-clj])
 
-(py/initialize!)
+(py/initialize! :python-executable "/opt/homebrew/Caskroom/miniconda/base/envs/noj-ml/bin/python")
 
 ;; Pomocné funkce
 (defn sanitize-column-name-str [s]
@@ -138,7 +138,10 @@ processed-ds
 
 
 (def log-reg
-  (sk-clj/fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:n_neighbors 4}))
+  (sk-clj/fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:algorithm "brute"
+                                                                         :n_neighbors 70
+                                                                         :weights "distance"
+                                                                         :metric "cosine"}))
 
 ;; Helper funkce pro konverzi čísel zpět na kategorie - NATIVNÍ PŘÍSTUP
 (defn transfer-categorical-metadata
@@ -212,7 +215,49 @@ processed-ds
       (.printStackTrace e)
       nil)))
 
-(predict-next-book [:let-your-english-september :k365-anglickych-cool-frazi-a-vyrazu])
+(predict-next-book [:vas-kapesni-terapeut])
+
+
+;; Alternativně - přímo sklearn GridSearchCV
+(defn sklearn-grid-search-knn []
+  (let [;; Import sklearn GridSearchCV
+        GridSearchCV (py/get-attr (py/import-module "sklearn.model_selection") "GridSearchCV")
+        KNeighborsClassifier (py/get-attr (py/import-module "sklearn.neighbors") "KNeighborsClassifier")
+        
+        ;; Parametry pro grid search
+        param-grid {"n_neighbors" [3 5 10 15 20 30 50]
+                    "weights" ["uniform" "distance"]
+                    "metric" ["cosine" "jaccard" "hamming"]
+                    "algorithm" ["auto" "brute"]}
+        
+        ;; Příprava dat
+        X-train (-> (:train split)
+                    (ds/drop-columns [:next-predicted-buy])
+                    (ds/->array))
+        y-train (-> (:train split)
+                    (ds/column :next-predicted-buy)
+                    (ds/->array))
+        
+        ;; GridSearchCV
+        knn-base (KNeighborsClassifier)
+        grid-search (GridSearchCV knn-base 
+                                  param-grid 
+                                  :cv 5 
+                                  :scoring "accuracy" 
+                                  :n_jobs -1
+                                  :verbose 1)
+        
+        ;; Fit grid search
+        _ (py/call-attr grid-search "fit" X-train y-train)]
+    
+    (println "Best parameters:" (py/get-attr grid-search "best_params_"))
+    (println "Best score:" (py/get-attr grid-search "best_score_"))
+    
+    ;; Vrátíme nejlepší model
+    (py/get-attr grid-search "best_estimator_")))
+
+;; Spuštění sklearn grid search
+(def best-knn-sklearn (sklearn-grid-search-knn))
 
 ;; =============================================================================
 ;; IMPLEMENTACE DOKONČENA - SHRNUTÍ
