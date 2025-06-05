@@ -8,7 +8,6 @@
   (:import [java.text Normalizer Normalizer$Form]))
 
 (require
- '[clojure.set :as set]
  '[libpython-clj2.python :as py]
  '[tech.v3.dataset :as ds]
  '[scicloj.kindly.v4.kind :as kind]
@@ -132,19 +131,44 @@
                                         :eta "0.1"}}]
       :tribuo-trainer-name "xgboost-simple"}))
 
-#_(loss/classification-accuracy
-   (ds/column (:test split)
-              :next-predicted-buy)
-   (ds/column (ml/predict (:test split) xgboost-simple-model)
-              :next-predicted-buy))
+(def xgb-model
+  (sk-clj/fit (:train split) :sklearn.ensemble "GradientBoostingClassifier"
+              {:n_estimators 100
+               :learning_rate 0.1
+               :max_depth 6
+               :random_state 42}))
 
 
-(def my-model
+(def logistic-model
+  (sk-clj/fit (:train split) :sklearn.linear_model "LogisticRegression"
+              {:penalty "l1"
+               :solver "liblinear"
+               :C 0.1
+               :random_state 42
+               :class_weight "balanced"}))
+
+(def linear-svc-model
   (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
               {:dual false
               :random_state 42
               :tol 0.5
-              :max_iter 100})) ; {:loss "hinge", :class_weight "balanced"} blbý
+              :max_iter 80})) ; {:loss "hinge", :class_weight "balanced"} blbý
+
+(def dtree-model
+  (sk-clj/fit (:train split) :sklearn.tree "DecisionTreeClassifier"
+              {:random_state 42}))
+
+
+(def rf-model
+  (sk-clj/fit (:train split) :sklearn.ensemble "RandomForestClassifier"
+              {:n_estimators 200
+               :max_depth 10
+               :min_samples_split 5
+               :random_state 42
+               :class_weight "balanced"}))
+
+(def nb-model
+  (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB" ))
 
 (def knn-model
   (sk-clj/fit (:train split) :sklearn.neighbors "KNeighborsClassifier"
@@ -182,11 +206,11 @@
     (ds-cat/reverse-map-categorical-xforms prediction-with-metadata)))
 
 ;; NATIVNÍ PŘÍSTUP pro accuracy measurement
-(loss/classification-accuracy
+(loss/classification-accuracy 
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
      (ds/column :next-predicted-buy))
- (-> (sk-clj/predict (:test split) my-model)
+ (-> (sk-clj/predict (:test split) xgb-model)
      (convert-predictions-to-categories (:train split))
      (ds/column :next-predicted-buy)))
 
@@ -226,16 +250,14 @@
   (loop [acc []
          predict-from input
          idx n]
-    (let [predicted (predict-next-book predict-from my-model)]
+    (let [predicted (predict-next-book predict-from linear-svc-model)]
       (if (> idx 0)
         (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
         (distinct acc)))))
 
-(predict-next-book [:mit-vse-hotovo] my-model)
+(predict-next-book [:mit-vse-hotovo] linear-svc-model)
 
-(predict-next-n-books [:superprognozy] 5)
-
-(conj [:a :b] [])
+(predict-next-n-books [:vitamin-l :vas-kapesni-terapeut] 5)
 
 
 ;; =============================================================================
