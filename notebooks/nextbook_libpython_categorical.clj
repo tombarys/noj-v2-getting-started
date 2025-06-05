@@ -8,6 +8,7 @@
   (:import [java.text Normalizer Normalizer$Form]))
 
 (require
+ '[clojure.set :as set]
  '[libpython-clj2.python :as py]
  '[tech.v3.dataset :as ds]
  '[scicloj.kindly.v4.kind :as kind]
@@ -17,10 +18,10 @@
  '[tech.v3.dataset.categorical :as ds-cat]
  '[scicloj.metamorph.ml.loss :as loss])
 
+(py/initialize! :python-executable "/opt/homebrew/Caskroom/miniconda/base/envs/noj-ml/bin/python")
+
 (require
  '[scicloj.sklearn-clj :as sk-clj])
-
-(py/initialize! :python-executable "/opt/homebrew/Caskroom/miniconda/base/envs/noj-ml/bin/python")
 
 ;; Pomocné funkce
 (defn sanitize-column-name-str [s]
@@ -221,18 +222,18 @@
       (.printStackTrace e)
       nil)))
 
-(defn predict-next-n-books [predict-from n]
+(defn predict-next-n-books [input n]
   (loop [acc []
-         predict-from predict-from
+         predict-from input
          idx n]
     (let [predicted (predict-next-book predict-from my-model)]
       (if (> idx 0)
-        (recur (conj acc predicted) (conj predict-from predicted) (dec n))
-        acc))))
+        (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
+        (distinct acc)))))
 
-(predict-next-book [:mit-vse-hotovo :mit-vse-hotovo-v-praxi :tata-geek :navzdy-plynule :digitalni-minimalismus] my-model)
+(predict-next-book [:mit-vse-hotovo] my-model)
 
-(predict-next-n-books [:mit-vse-hotovo] 4)
+(predict-next-n-books [:pamet] 5)
 
 (conj [:a :b] [])
 
