@@ -1,11 +1,7 @@
-;; ==============================================================================
-;; NATIVNÍ CATEGORICAL VERZE
-;; Tato verze používá tech.v3.dataset.categorical/reverse-map-categorical-xforms
-;; místo ruční konverze number->category pro elegantnější řešení
-;; ==============================================================================
-
 (ns nextbook-libpython-categorical
-  (:import [java.text Normalizer Normalizer$Form]))
+  (:import [java.text Normalizer Normalizer$Form]) 
+  (:require
+    [scicloj.kindly.v4.kind :as kind]))
 
 (require
  '[libpython-clj2.python :as py]
@@ -35,17 +31,18 @@
           lower-cased (str/lower-case no-brackets)]
       lower-cased)))
 
-(def raw-ds (tc/dataset
-             "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
-             {:header? true :separator ","
-              :column-allowlist ["Produkt (produkty)" "Zákazník"]
-              :num-rows 5000
-              :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
+(def raw-ds
+  (tc/dataset
+   "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
+   {:header? true :separator ","
+    :column-allowlist ["Produkt (produkty)" "Zákazník"]
+    :num-rows 5000
+    :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
  (tc/info raw-ds))
 
-;; ## Pomocné funkce pro sanitizaci sloupců
+
 (defn parse-books [s]
   (->> (str/split s #",\s\d+")
        (map #(str/replace % #"\d*×\s" ""))
@@ -62,7 +59,7 @@
        distinct
        (mapv keyword)))
 
-;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
+;; ## Pomocné funkce pro sanitizaci sloupců
 (defn create-one-hot-encoding [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
         customer-books (-> raw-ds
@@ -104,12 +101,54 @@
         (ds/drop-columns [:zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
-
-;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
+;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
 (def processed-ds-numeric
   (-> raw-ds
       create-one-hot-encoding
       (ds/categorical->number [:next-predicted-buy])))
+
+
+;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
+(kind/plotly
+ ;; Top 15 nejčastějších knih - korelační matice
+ (let [numeric-features (ds/drop-columns processed-ds-numeric [:next-predicted-buy])
+
+       ;; Najdeme top 15 nejčastějších knih (nejvíc jedniček)
+       top-books (->> (ds/column-names numeric-features)
+                      (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
+                      (sort-by second >)
+                      (take 50)
+                      (map first))
+
+       ;; Filtrujeme dataset na tyto knihy
+       top-ds (ds/select-columns numeric-features top-books)
+
+       ;; Převedeme na pandas DataFrame - NEJJEDNODUŠŠÍ ZPŮSOB
+       pd (py/import-module "pandas")
+
+       ;; Vytvoříme DataFrame ze sloupců
+       df (py/call-attr pd "DataFrame"
+                        (into {} (map (fn [col]
+                                        [(name col) (vec (ds/column top-ds col))])
+                                      top-books)))
+
+       ;; Korelační matice
+       corr-matrix (py/call-attr df "corr")
+       corr-values (py/->jvm (py/get-attr corr-matrix "values"))
+       col-names (py/->jvm (py/get-attr df "columns"))]
+
+   {:data [{:type "heatmap"
+            :z corr-values
+            :x col-names
+            :y col-names
+            :colorscale "RdBu"
+            :zmid 0}]
+    :layout {:title "Korelace top 15 nejčastějších knih"
+             :xaxis {:tickangle 45}
+             :width 1200
+             :height 900}}))
+
+
 
 (kind/table
  (ds/head processed-ds-numeric))
@@ -119,19 +158,7 @@
       (tc/split->seq  :holdout {:seed 42})
       first))
 
-#_(def xgboost-simple-model ;; funguje
-    (ml/train
-     (:train split)
-     {:model-type :scicloj.ml.tribuo/classification
-      :tribuo-components [{:name "xgboost-simple"
-                           :target-columns [:next-predicted-buy]
-                           :type "org.tribuo.classification.xgboost.XGBoostClassificationTrainer"
-                           :properties {:numTrees "100"
-                                        :maxDepth "6"
-                                        :eta "0.1"}}]
-      :tribuo-trainer-name "xgboost-simple"}))
-
-(def xgb-model
+#_(def xgb-model ;; bacha, sekne se
   (sk-clj/fit (:train split) :sklearn.ensemble "GradientBoostingClassifier"
               {:n_estimators 100
                :learning_rate 0.1
@@ -139,7 +166,22 @@
                :random_state 42}))
 
 
-(def logistic-model
+#_(def et-model ;; 0.03
+  (sk-clj/fit (:train split) :sklearn.ensemble "ExtraTreesClassifier"
+              {:n_estimators 200
+               :max_depth 15
+               :random_state 42
+               :class_weight "balanced"}))
+
+#_(def sgd-model ;; 0.03
+  (sk-clj/fit (:train split) :sklearn.linear_model "SGDClassifier"
+              {:loss "log_loss"
+               :penalty "elasticnet"
+               :alpha 0.001
+               :random_state 42
+               :class_weight "balanced"}))
+
+#_(def logistic-model ;; 0.016
   (sk-clj/fit (:train split) :sklearn.linear_model "LogisticRegression"
               {:penalty "l1"
                :solver "liblinear"
@@ -147,19 +189,19 @@
                :random_state 42
                :class_weight "balanced"}))
 
-(def linear-svc-model
+(def linear-svc-model ;; 0.18
   (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
               {:dual false
               :random_state 42
               :tol 0.5
               :max_iter 80})) ; {:loss "hinge", :class_weight "balanced"} blbý
 
-(def dtree-model
+#_(def dtree-model ;; 0.11
   (sk-clj/fit (:train split) :sklearn.tree "DecisionTreeClassifier"
               {:random_state 42}))
 
 
-(def rf-model
+#_(def rf-model ;; 0.03
   (sk-clj/fit (:train split) :sklearn.ensemble "RandomForestClassifier"
               {:n_estimators 200
                :max_depth 10
@@ -167,13 +209,13 @@
                :random_state 42
                :class_weight "balanced"}))
 
-(def nb-model
+#_(def nb-model ;; 0.16
   (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB" ))
 
-(def knn-model
+#_(def knn-model ;; 0.14
   (sk-clj/fit (:train split) :sklearn.neighbors "KNeighborsClassifier"
-              {:algorithm "brute"
-               :n_neighbors 70
+              {:algorithm "auto"
+               :n_neighbors 90
                :weights "distance"
                :metric "cosine"}))
 
@@ -210,7 +252,7 @@
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
      (ds/column :next-predicted-buy))
- (-> (sk-clj/predict (:test split) xgb-model)
+ (-> (sk-clj/predict (:test split) dtree-model)
      (convert-predictions-to-categories (:train split))
      (ds/column :next-predicted-buy)))
 
@@ -258,30 +300,3 @@
 (predict-next-book [:mit-vse-hotovo] linear-svc-model)
 
 (predict-next-n-books [:vitamin-l :vas-kapesni-terapeut] 5)
-
-
-;; =============================================================================
-;; IMPLEMENTACE DOKONČENA - SHRNUTÍ
-;; =============================================================================
-;; 
-;; Tato implementace úspěšně využívá nativní tech.v3.dataset.categorical funkce
-;; místo ruční konverze čísel na kategorie. Klíčové změny:
-;;
-;; 1. NATIVNÍ FUNKCE:
-;;    - ds-cat/reverse-map-categorical-xforms pro konverzi predikovaných čísel
-;;    - transfer-categorical-metadata pro přenos metadat z trénovacích dat
-;;    - convert-predictions-to-categories pro celkovou konverzi
-;;
-;; 2. VÝHODY:
-;;    - Idiomatický kód využívající knihovní funkce
-;;    - Automatická správa categorical metadat
-;;    - Stejné výsledky jako původní implementace
-;;    - Lepší integrace s tech.v3.dataset ekosystémem
-;;
-;; 3. OVĚŘENÍ:
-;;    - Funkce správně zpracovává jednotlivé knihy i kolekce
-;;    - Predikce jsou identické s původní implementací
-;;    - Žádné compilation errors
-;;
-;; Implementace je připravena k produkčnímu použití.
-;; =============================================================================
