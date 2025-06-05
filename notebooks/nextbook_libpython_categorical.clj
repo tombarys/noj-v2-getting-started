@@ -39,7 +39,7 @@
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
              {:header? true :separator ","
               :column-allowlist ["Produkt (produkty)" "Zákazník"]
-              :num-rows 1000
+              :num-rows 5000
               :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -201,22 +201,14 @@
                              tc/column-names)
           ; Filtrujeme pouze knihy, které existují v trénovacích datech
           valid-books (filter #(contains? (set train-features) %) owned-books-coll)
-          _ (when (empty? valid-books)
-              (println "Varování: Žádná z uvedených knih není v trénovacích datech"))
-          _ (println "Debug: valid-books count:" (count valid-books))
-          _ (println "Debug: train-features count:" (count train-features))
           zero-map (zipmap train-features (repeat 0))
           input-data (merge zero-map (zipmap valid-books (repeat 1)))
           ;; Vytvoříme input dataset s placeholder target sloupcem a nastavíme inference target
           full-input-data (assoc input-data :next-predicted-buy nil)
           input-ds (-> (ds/->dataset [full-input-data])
                        (ds-mod/set-inference-target [:next-predicted-buy]))
-          _ (println "Debug: input-ds columns:" (tc/column-names input-ds))
-          _ (println "Debug: input-ds shape:" [(ds/row-count input-ds) (ds/column-count input-ds)])
-          _ (println "Debug: input-ds inference-target?" (some #(:inference-target? (meta %)) (tc/columns input-ds)))
           ;; Predikce pomocí sklearn modelu
           raw-pred (sk-clj/predict input-ds my-model)
-          _ (println "Debug: raw-pred columns:" (tc/column-names raw-pred))
           ;; NATIVNÍ KONVERZE: Použijeme ds-cat/reverse-map-categorical-xforms místo ruční konverze
           predicted-categories-ds (convert-predictions-to-categories raw-pred (:train split))
           predicted-category (-> predicted-categories-ds
@@ -229,7 +221,20 @@
       (.printStackTrace e)
       nil)))
 
-(predict-next-book [:superkomunikatori :vas-kapesni-terapeut] my-model)
+(defn predict-next-n-books [predict-from n]
+  (loop [acc []
+         predict-from predict-from
+         idx n]
+    (let [predicted (predict-next-book predict-from my-model)]
+      (if (> idx 0)
+        (recur (conj acc predicted) (conj predict-from predicted) (dec n))
+        acc))))
+
+(predict-next-book [:mit-vse-hotovo :mit-vse-hotovo-v-praxi :tata-geek :navzdy-plynule :digitalni-minimalismus] my-model)
+
+(predict-next-n-books [:mit-vse-hotovo] 4)
+
+(conj [:a :b] [])
 
 
 ;; =============================================================================
