@@ -233,7 +233,7 @@
 
 (predict-next-book [:mit-vse-hotovo] my-model)
 
-(predict-next-n-books [:pamet] 5)
+(predict-next-n-books [:superprognozy] 5)
 
 (conj [:a :b] [])
 
