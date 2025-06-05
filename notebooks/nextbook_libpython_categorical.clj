@@ -39,7 +39,7 @@
              "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
              {:header? true :separator ","
               :column-allowlist ["Produkt (produkty)" "Zákazník"]
-              :num-rows 10000
+              :num-rows 1000
               :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -104,14 +104,15 @@
         (ds/drop-columns [:zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
-;; Nejdříve vytvoříme base dataset z one-hot encoding
-(def processed-ds (create-one-hot-encoding raw-ds))
 
-processed-ds
-
-;; Pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
+;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
 (def processed-ds-numeric
-  (ds/categorical->number processed-ds [:next-predicted-buy]))
+  (-> raw-ds
+      create-one-hot-encoding
+      (ds/categorical->number [:next-predicted-buy])))
+
+(kind/table
+ (ds/head processed-ds-numeric))
 
 (def split
   (-> processed-ds-numeric
@@ -137,11 +138,24 @@ processed-ds
               :next-predicted-buy))
 
 
-(def log-reg
-  (sk-clj/fit (:train split) :sklearn.neighbors :k-neighbors-classifier {:algorithm "brute"
-                                                                         :n_neighbors 70
-                                                                         :weights "distance"
-                                                                         :metric "cosine"}))
+(def my-model
+  (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
+              {:dual false
+              :random_state 42
+              :tol 0.5
+              :max_iter 100})) ; {:loss "hinge", :class_weight "balanced"} blbý
+
+(def knn-model
+  (sk-clj/fit (:train split) :sklearn.neighbors "KNeighborsClassifier"
+              {:algorithm "brute"
+               :n_neighbors 70
+               :weights "distance"
+               :metric "cosine"}))
+
+(-> (py/import-module "sklearn.svm")
+    (py/get-attr "__dict__")
+    py/->jvm
+    keys)
 
 ;; Helper funkce pro konverzi čísel zpět na kategorie - NATIVNÍ PŘÍSTUP
 (defn transfer-categorical-metadata
@@ -171,14 +185,14 @@ processed-ds
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
      (ds/column :next-predicted-buy))
- (-> (sk-clj/predict (:test split) log-reg)
+ (-> (sk-clj/predict (:test split) my-model)
      (convert-predictions-to-categories (:train split))
      (ds/column :next-predicted-buy)))
 
 ;; Helper funkce pro predikce - NATIVNÍ PŘÍSTUP
 (defn predict-next-book
   "Predikuje další knihu na základě vlastněných knih - používá nativní categorical konverzi"
-  [owned-books]
+  [owned-books my-model]
   (try
     (let [; Zajistíme, že owned-books je vždy kolekce
           owned-books-coll (if (coll? owned-books) owned-books [owned-books])
@@ -201,7 +215,7 @@ processed-ds
           _ (println "Debug: input-ds shape:" [(ds/row-count input-ds) (ds/column-count input-ds)])
           _ (println "Debug: input-ds inference-target?" (some #(:inference-target? (meta %)) (tc/columns input-ds)))
           ;; Predikce pomocí sklearn modelu
-          raw-pred (sk-clj/predict input-ds log-reg)
+          raw-pred (sk-clj/predict input-ds my-model)
           _ (println "Debug: raw-pred columns:" (tc/column-names raw-pred))
           ;; NATIVNÍ KONVERZE: Použijeme ds-cat/reverse-map-categorical-xforms místo ruční konverze
           predicted-categories-ds (convert-predictions-to-categories raw-pred (:train split))
@@ -215,49 +229,8 @@ processed-ds
       (.printStackTrace e)
       nil)))
 
-(predict-next-book [:vas-kapesni-terapeut])
+(predict-next-book [:superkomunikatori :vas-kapesni-terapeut] my-model)
 
-
-;; Alternativně - přímo sklearn GridSearchCV
-(defn sklearn-grid-search-knn []
-  (let [;; Import sklearn GridSearchCV
-        GridSearchCV (py/get-attr (py/import-module "sklearn.model_selection") "GridSearchCV")
-        KNeighborsClassifier (py/get-attr (py/import-module "sklearn.neighbors") "KNeighborsClassifier")
-        
-        ;; Parametry pro grid search
-        param-grid {"n_neighbors" [3 5 10 15 20 30 50]
-                    "weights" ["uniform" "distance"]
-                    "metric" ["cosine" "jaccard" "hamming"]
-                    "algorithm" ["auto" "brute"]}
-        
-        ;; Příprava dat
-        X-train (-> (:train split)
-                    (ds/drop-columns [:next-predicted-buy])
-                    (ds/->array))
-        y-train (-> (:train split)
-                    (ds/column :next-predicted-buy)
-                    (ds/->array))
-        
-        ;; GridSearchCV
-        knn-base (KNeighborsClassifier)
-        grid-search (GridSearchCV knn-base 
-                                  param-grid 
-                                  :cv 5 
-                                  :scoring "accuracy" 
-                                  :n_jobs -1
-                                  :verbose 1)
-        
-        ;; Fit grid search
-        _ (py/call-attr grid-search "fit" X-train y-train)]
-    
-    (println "Best parameters:" (py/get-attr grid-search "best_params_"))
-    (println "Best score:" (py/get-attr grid-search "best_score_"))
-    
-    ;; Vrátíme nejlepší model
-    (py/get-attr grid-search "best_estimator_")))
-
-;; Spuštění sklearn grid search
-(def best-knn-sklearn (sklearn-grid-search-knn))
 
 ;; =============================================================================
 ;; IMPLEMENTACE DOKONČENA - SHRNUTÍ
