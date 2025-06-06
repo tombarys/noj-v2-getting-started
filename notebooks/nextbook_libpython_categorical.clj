@@ -1,7 +1,5 @@
 (ns nextbook-libpython-categorical
-  (:import [java.text Normalizer Normalizer$Form]) 
-  (:require
-    [scicloj.kindly.v4.kind :as kind]))
+  (:import [java.text Normalizer Normalizer$Form]))
 
 (require
  '[libpython-clj2.python :as py]
@@ -35,10 +33,9 @@
 
 (def raw-ds
   (tc/dataset
-   "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
+   "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
     :column-allowlist ["Produkt (produkty)" "Zákazník"]
-    :num-rows 5000
     :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -103,11 +100,16 @@
         (ds/drop-columns [:zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
+
 ;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
 (def processed-ds-numeric
   (-> raw-ds
       create-one-hot-encoding
       (ds/categorical->number [:next-predicted-buy])))
+
+(kind/table
+ (tc/info processed-ds-numeric))
+
 
 
 ;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
@@ -301,4 +303,4 @@
 
 (predict-next-book [:mit-vse-hotovo] linear-svc-model)
 
-(predict-next-n-books [:vitamin-l :vas-kapesni-terapeut] 5)
+(predict-next-n-books [:designerem-vlastniho-zivota] 5)
