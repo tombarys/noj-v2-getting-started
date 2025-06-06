@@ -303,4 +303,4 @@
 
 (predict-next-book [:mit-vse-hotovo] linear-svc-model)
 
-(predict-next-n-books [:designerem-vlastniho-zivota] 5)
+(predict-next-n-books [:jed-dal] 5)
