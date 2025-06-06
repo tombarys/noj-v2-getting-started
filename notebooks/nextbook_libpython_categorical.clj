@@ -13,7 +13,9 @@
  '[tech.v3.dataset.categorical :as ds-cat]
  '[scicloj.metamorph.ml.loss :as loss])
 
-(py/initialize! :python-executable "/opt/homebrew/Caskroom/miniconda/base/envs/noj-ml/bin/python")
+(py/initialize! :python-executable
+                (or (System/getenv "PYTHON_EXECUTABLE")    ;; configurable
+                    "python"))                             ;; sane default
 
 (require
  '[scicloj.sklearn-clj :as sk-clj])
@@ -252,7 +254,7 @@
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
      (ds/column :next-predicted-buy))
- (-> (sk-clj/predict (:test split) dtree-model)
+ (-> (sk-clj/predict (:test split) linear-svc-model)
      (convert-predictions-to-categories (:train split))
      (ds/column :next-predicted-buy)))
 
