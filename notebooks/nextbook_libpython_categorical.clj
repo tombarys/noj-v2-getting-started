@@ -1,7 +1,5 @@
 (ns nextbook-libpython-categorical
-  (:import [java.text Normalizer Normalizer$Form]) 
-  (:require
-    [scicloj.kindly.v4.kind :as kind]))
+  (:import [java.text Normalizer Normalizer$Form]))
 
 (require
  '[libpython-clj2.python :as py]
@@ -49,7 +47,6 @@
    "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
     :column-allowlist ["Produkt (produkty)" "Zákazník"]
-    :num-rows 5000
     :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -113,6 +110,7 @@
     (-> one-hot-ds
         (ds/drop-columns [:zakaznik])
         (ds-mod/set-inference-target [:next-predicted-buy]))))
+
 
 ;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
 (def processed-ds-numeric
@@ -320,4 +318,4 @@
 
 (predict-next-book [:mit-vse-hotovo] linear-svc-model)
 
-(predict-next-n-books [:vitamin-l :vas-kapesni-terapeut] 5)
+(predict-next-n-books [:jed-dal] 5)
