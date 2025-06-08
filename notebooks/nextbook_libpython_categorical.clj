@@ -46,7 +46,7 @@
 
 (def raw-ds
   (tc/dataset
-   "/Users/tomas/Downloads/wc-orders-report-export-17477349086991.csv"
+   "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
     :column-allowlist ["Produkt (produkty)" "Zákazník"]
     :num-rows 5000
@@ -119,6 +119,10 @@
   (-> raw-ds
       create-one-hot-encoding
       (ds/categorical->number [:next-predicted-buy])))
+
+(kind/table
+ (tc/info processed-ds-numeric))
+
 
 
 ;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
