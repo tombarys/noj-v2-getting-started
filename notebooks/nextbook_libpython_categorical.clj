@@ -124,6 +124,10 @@
  (tc/info processed-ds-numeric))
 
 
+(kind/table
+ (tc/info processed-ds-numeric))
+
+
 
 ;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
 (kind/plotly
