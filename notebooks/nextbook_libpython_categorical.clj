@@ -2,7 +2,8 @@
   (:import [java.text Normalizer Normalizer$Form])
   (:require
    [scicloj.kindly.v4.kind :as kind]
-   [tech.v3.dataset :as ds]))
+   [tech.v3.dataset :as ds]
+   [tablecloth.api :as tc]))
 
 (require
  '[libpython-clj2.python :as py]
@@ -51,7 +52,7 @@
    "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
     :column-allowlist ["Produkt (produkty)" "Zákazník"]
-    :num-rows 2000
+    #_#_:num-rows 2000
     :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -118,27 +119,18 @@
                  (ds/drop-columns [:zakaznik])
                  ds/column-names))
 
-columns
 
-(tc/sum ds-simple :jed-dal)
+(def counts
+  (-> (map (fn [col]
+          [col (-> (tc/sum ds-simple col)
+                   (ds/column "summary")
+                   first)])
+        columns)
+      (tc/dataset)
+      (tc/rename-columns [:book :count])
+      (ds/sort-by-column :count)))
 
-(into {}
-      (map (fn [col]
-             [col (-> (tc/sum ds-simple col)
-                      (ds/column "summary")
-                      first)])
-           columns))
-
-(as-> ds-simple ds
-  (map #(tc/sum ds %) columns))
-
-#_(defn add-counts [ds]
-)
-
-(kind/table 
- (ds/sample (create-one-hot-encoding-simple raw-ds)))
-
-
+counts
 
 (defn create-one-hot-encoding [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
