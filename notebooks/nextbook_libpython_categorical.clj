@@ -1,9 +1,13 @@
 (ns nextbook-libpython-categorical
-  (:import [java.text Normalizer Normalizer$Form]))
+  (:import [java.text Normalizer Normalizer$Form])
+  (:require
+   [scicloj.kindly.v4.kind :as kind]
+   [tech.v3.dataset :as ds]))
 
 (require
  '[libpython-clj2.python :as py]
  '[tech.v3.dataset :as ds]
+ '[scicloj.kindly.v4.kind :as kind]
  '[tablecloth.api :as tc]
  '[clojure.string :as str]
  '[tech.v3.dataset.modelling :as ds-mod]
@@ -17,14 +21,14 @@
   (println "Initializing Python with:" python-path)
   (py/initialize! :python-executable python-path)
   (println "Python initialized successfully!")
-  
+
   ;; Test sklearn dostupnosti
   (try
     (def sklearn-test (py/import-module "sklearn"))
     (println "sklearn version:" (py/get-attr sklearn-test "__version__"))
     (catch Exception e
       (println "ERROR: sklearn not available:" (.getMessage e))
-      (throw e))))                          
+      (throw e))))
 
 (require
  '[scicloj.sklearn-clj :as sk-clj])
@@ -47,6 +51,7 @@
    "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
     :column-allowlist ["Produkt (produkty)" "Zákazník"]
+    :num-rows 2000
     :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
@@ -69,7 +74,72 @@
        distinct
        (mapv keyword)))
 
+
 ;; ## Pomocné funkce pro sanitizaci sloupců
+
+
+(defn create-one-hot-encoding-simple [raw-ds]
+  (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
+        customer+orders (-> raw-ds
+                            (ds/drop-missing :zakaznik)
+                            (tc/group-by [:zakaznik])
+                            (tc/aggregate {:all-products #(str/join ", " (ds/column % :produkt-produkty))})
+                            (tc/rename-columns {:summary :all-products}))
+
+        ;; Získáme všechny unikátní knihy ze všech řádků
+        all-titles (->> (ds/column customer+orders :all-products)
+                        (mapcat parse-books)
+                        distinct
+                        sort)
+
+        ;; Pro každého zákazníka vytvoříme řádky kde každá kniha je postupně target
+        customers->rows (map
+                         (fn [customer-row]
+                           (let [customer-name (:zakaznik customer-row)
+                                 books-bought-set (set (parse-books (:all-products customer-row)))
+                                 one-hot-map (reduce (fn [acc book]
+                                                       (assoc acc book (if (contains? books-bought-set book) 1 0)))
+                                                     {}
+                                                     all-titles)]
+                             (merge {:zakaznik customer-name}
+                                    one-hot-map)))
+                         (tc/rows customer+orders :as-maps))
+
+        ;; Vytvoříme nový dataset z one-hot dat
+        one-hot-ds (tc/dataset customers->rows)]
+
+    ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
+    (-> one-hot-ds
+        #_(ds/drop-columns [:zakaznik]))))
+
+(def ds-simple (create-one-hot-encoding-simple raw-ds))
+
+(def columns (-> ds-simple
+                 (ds/drop-columns [:zakaznik])
+                 ds/column-names))
+
+columns
+
+(tc/sum ds-simple :jed-dal)
+
+(into {}
+      (map (fn [col]
+             [col (-> (tc/sum ds-simple col)
+                      (ds/column "summary")
+                      first)])
+           columns))
+
+(as-> ds-simple ds
+  (map #(tc/sum ds %) columns))
+
+#_(defn add-counts [ds]
+)
+
+(kind/table 
+ (ds/sample (create-one-hot-encoding-simple raw-ds)))
+
+
+
 (defn create-one-hot-encoding [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
         customer-books (-> raw-ds
@@ -112,6 +182,7 @@
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
 
+
 ;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
 (def processed-ds-numeric
   (-> raw-ds
@@ -119,7 +190,7 @@
       (ds/categorical->number [:next-predicted-buy])))
 
 (kind/table
- (tc/info processed-ds-numeric))
+ (tc/head processed-ds-numeric))
 
 
 (kind/table
@@ -178,65 +249,65 @@
       first))
 
 #_(def xgb-model ;; bacha, sekne se
-  (sk-clj/fit (:train split) :sklearn.ensemble "GradientBoostingClassifier"
-              {:n_estimators 100
-               :learning_rate 0.1
-               :max_depth 6
-               :random_state 42}))
+    (sk-clj/fit (:train split) :sklearn.ensemble "GradientBoostingClassifier"
+                {:n_estimators 100
+                 :learning_rate 0.1
+                 :max_depth 6
+                 :random_state 42}))
 
 
 #_(def et-model ;; 0.03
-  (sk-clj/fit (:train split) :sklearn.ensemble "ExtraTreesClassifier"
-              {:n_estimators 200
-               :max_depth 15
-               :random_state 42
-               :class_weight "balanced"}))
+    (sk-clj/fit (:train split) :sklearn.ensemble "ExtraTreesClassifier"
+                {:n_estimators 200
+                 :max_depth 15
+                 :random_state 42
+                 :class_weight "balanced"}))
 
 #_(def sgd-model ;; 0.03
-  (sk-clj/fit (:train split) :sklearn.linear_model "SGDClassifier"
-              {:loss "log_loss"
-               :penalty "elasticnet"
-               :alpha 0.001
-               :random_state 42
-               :class_weight "balanced"}))
+    (sk-clj/fit (:train split) :sklearn.linear_model "SGDClassifier"
+                {:loss "log_loss"
+                 :penalty "elasticnet"
+                 :alpha 0.001
+                 :random_state 42
+                 :class_weight "balanced"}))
 
 #_(def logistic-model ;; 0.016
-  (sk-clj/fit (:train split) :sklearn.linear_model "LogisticRegression"
-              {:penalty "l1"
-               :solver "liblinear"
-               :C 0.1
-               :random_state 42
-               :class_weight "balanced"}))
+    (sk-clj/fit (:train split) :sklearn.linear_model "LogisticRegression"
+                {:penalty "l1"
+                 :solver "liblinear"
+                 :C 0.1
+                 :random_state 42
+                 :class_weight "balanced"}))
 
 (def linear-svc-model ;; 0.18
   (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
               {:dual false
-              :random_state 42
-              :tol 0.5
-              :max_iter 80})) ; {:loss "hinge", :class_weight "balanced"} blbý
+               :random_state 42
+               :tol 0.5
+               :max_iter 80})) ; {:loss "hinge", :class_weight "balanced"} blbý
 
 #_(def dtree-model ;; 0.11
-  (sk-clj/fit (:train split) :sklearn.tree "DecisionTreeClassifier"
-              {:random_state 42}))
+    (sk-clj/fit (:train split) :sklearn.tree "DecisionTreeClassifier"
+                {:random_state 42}))
 
 
 #_(def rf-model ;; 0.03
-  (sk-clj/fit (:train split) :sklearn.ensemble "RandomForestClassifier"
-              {:n_estimators 200
-               :max_depth 10
-               :min_samples_split 5
-               :random_state 42
-               :class_weight "balanced"}))
+    (sk-clj/fit (:train split) :sklearn.ensemble "RandomForestClassifier"
+                {:n_estimators 200
+                 :max_depth 10
+                 :min_samples_split 5
+                 :random_state 42
+                 :class_weight "balanced"}))
 
 #_(def nb-model ;; 0.16
-  (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB" ))
+    (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB"))
 
 #_(def knn-model ;; 0.14
-  (sk-clj/fit (:train split) :sklearn.neighbors "KNeighborsClassifier"
-              {:algorithm "auto"
-               :n_neighbors 90
-               :weights "distance"
-               :metric "cosine"}))
+    (sk-clj/fit (:train split) :sklearn.neighbors "KNeighborsClassifier"
+                {:algorithm "auto"
+                 :n_neighbors 90
+                 :weights "distance"
+                 :metric "cosine"}))
 
 (-> (py/import-module "sklearn.svm")
     (py/get-attr "__dict__")
@@ -250,8 +321,8 @@
   (let [ref-col (ds/column reference-dataset column-name)
         ref-meta (meta ref-col)
         target-col (ds/column target-dataset column-name)]
-    (ds/new-column column-name 
-                   target-col 
+    (ds/new-column column-name
+                   target-col
                    ref-meta)))
 
 (defn convert-predictions-to-categories
@@ -260,14 +331,14 @@
   (let [;; Přeneseme categorical metadata z reference datasetu
         prediction-with-metadata (-> prediction-dataset
                                      (ds/remove-column :next-predicted-buy)
-                                     (ds/add-column (transfer-categorical-metadata 
-                                                     prediction-dataset 
-                                                     reference-dataset 
+                                     (ds/add-column (transfer-categorical-metadata
+                                                     prediction-dataset
+                                                     reference-dataset
                                                      :next-predicted-buy)))]
     (ds-cat/reverse-map-categorical-xforms prediction-with-metadata)))
 
 ;; NATIVNÍ PŘÍSTUP pro accuracy measurement
-(loss/classification-accuracy 
+(loss/classification-accuracy
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
      (ds/column :next-predicted-buy))
