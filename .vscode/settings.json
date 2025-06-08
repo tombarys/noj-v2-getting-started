@@ -17,6 +17,9 @@
         "projectRootPath": ["."],
         "cljsType": "none",
         "projectType": "deps.edn",
+        "jackInEnv": {
+          "PYTHON_EXECUTABLE": "/opt/homebrew/Caskroom/miniconda/base/envs/noj-ml/bin/python"
+        },
         "menuSelections": {
           "cljAliases": ["test"]
         }
