@@ -34,7 +34,7 @@
 (require
  '[scicloj.sklearn-clj :as sk-clj])
 
-;; Pomocné funkce
+;; # Pomocné funkce
 (defn sanitize-column-name-str [s]
   (if (or (nil? s) (empty? s))
     s
@@ -175,7 +175,76 @@ counts
 
 
 
-;; ## Funkce pro vytvoření one-hot-encoding sloupců z nakoupených knih
+;; ## Nejdříve korelační matička
+
+;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
+
+ ;; Top X nejčastějších knih - korelační matice
+ (def corr-matrix
+   (let [numeric-features (ds/drop-columns ds-simple [:zakaznik])
+
+         ;; Najdeme top nejčastějších knih (nejvíc jedniček)
+         top-books (->> (ds/column-names numeric-features)
+                        (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
+                        (sort-by second >)
+                        (take 75)
+                        (map first))
+
+         ;; Filtrujeme dataset na tyto knihy
+         top-ds (ds/select-columns numeric-features top-books)
+
+         ;; Převedeme na pandas DataFrame - NEJJEDNODUŠŠÍ ZPŮSOB
+         pd (py/import-module "pandas")
+
+         ;; Vytvoříme DataFrame ze sloupců
+         df (py/call-attr pd "DataFrame"
+                          (into {} (map (fn [col]
+                                          [(name col) (vec (ds/column top-ds col))])
+                                        top-books)))
+
+         ;; Korelační matice
+         corr-matrix (py/call-attr df "corr")
+         corr-values (py/->jvm (py/get-attr corr-matrix "values"))
+         col-names (py/->jvm (py/get-attr df "columns"))]
+     {:corr-values corr-values 
+      :col-names col-names}))
+
+(defn book-sum-correlations [correlation-data]
+  (let [col-names (:col-names correlation-data)
+        corr-values (:corr-values correlation-data)
+        num-books (count col-names)]
+    (if (< num-books 1) ; Změna podmínky, stačí jedna kniha pro sumu
+      (tc/dataset {:book [] :sum-correlation []})
+      (let [sum-correlations-data
+            (map-indexed
+             (fn [idx book-name]
+               (let [row-correlations (nth corr-values idx)
+                     ;; Součet všech korelací v řádku
+                     sum-of-correlations (reduce + row-correlations)]
+                 {:book book-name
+                  :sum-correlation sum-of-correlations})) ; Změna na sumu
+             col-names)]
+        (-> (tc/dataset sum-correlations-data)
+            (tc/order-by [:sum-correlation] :desc)))))) ; Třídění podle sumy
+
+
+(book-sum-correlations corr-matrix)
+
+(kind/plotly
+ {:data [{:type "heatmap"
+          :z (:corr-values corr-matrix)
+          :x (:col-names corr-matrix)
+          :y (:col-names corr-matrix)
+          :colorscale "RdBu"
+          :zmid 0}]
+  :layout {:title "Korelace top x nejčastějších knih"
+           :xaxis {:tickangle 45}
+           :width 1200
+           :height 900}})
+
+
+;; # A nyní predikce
+
 (def processed-ds-numeric
   (-> raw-ds
       create-one-hot-encoding
@@ -189,50 +258,6 @@ counts
  (ds/head
   (tc/info processed-ds-numeric)
   30))
-
-
-
-;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
-(kind/plotly
- ;; Top 15 nejčastějších knih - korelační matice
- (let [numeric-features (ds/drop-columns processed-ds-numeric [:next-predicted-buy])
-
-       ;; Najdeme top 15 nejčastějších knih (nejvíc jedniček)
-       top-books (->> (ds/column-names numeric-features)
-                      (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
-                      (sort-by second >)
-                      (take 50)
-                      (map first))
-
-       ;; Filtrujeme dataset na tyto knihy
-       top-ds (ds/select-columns numeric-features top-books)
-
-       ;; Převedeme na pandas DataFrame - NEJJEDNODUŠŠÍ ZPŮSOB
-       pd (py/import-module "pandas")
-
-       ;; Vytvoříme DataFrame ze sloupců
-       df (py/call-attr pd "DataFrame"
-                        (into {} (map (fn [col]
-                                        [(name col) (vec (ds/column top-ds col))])
-                                      top-books)))
-
-       ;; Korelační matice
-       corr-matrix (py/call-attr df "corr")
-       corr-values (py/->jvm (py/get-attr corr-matrix "values"))
-       col-names (py/->jvm (py/get-attr df "columns"))]
-
-   {:data [{:type "heatmap"
-            :z corr-values
-            :x col-names
-            :y col-names
-            :colorscale "RdBu"
-            :zmid 0}]
-    :layout {:title "Korelace top 15 nejčastějších knih"
-             :xaxis {:tickangle 45}
-             :width 1200
-             :height 900}}))
-
-
 
 (kind/table
  (ds/head processed-ds-numeric))
@@ -273,7 +298,7 @@ counts
                  :random_state 42
                  :class_weight "balanced"}))
 
-(def linear-svc-model ;; 0.18
+#_(def linear-svc-model ;; 0.12
   (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
               {:dual false
                :random_state 42
@@ -293,7 +318,7 @@ counts
                  :random_state 42
                  :class_weight "balanced"}))
 
-#_(def nb-model ;; 0.16
+(def nb-model ;; 0.13
     (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB"))
 
 #_(def knn-model ;; 0.14
@@ -336,7 +361,7 @@ counts
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
      (ds/column :next-predicted-buy))
- (-> (sk-clj/predict (:test split) linear-svc-model)
+ (-> (sk-clj/predict (:test split) nb-model)
      (convert-predictions-to-categories (:train split))
      (ds/column :next-predicted-buy)))
 
@@ -376,12 +401,12 @@ counts
   (loop [acc []
          predict-from input
          idx n]
-    (let [predicted (predict-next-book predict-from linear-svc-model)]
+    (let [predicted (predict-next-book predict-from nb-model)]
       (if (> idx 0)
         (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
         (distinct acc)))))
 
-(predict-next-book [:mit-vse-hotovo] linear-svc-model)
+(predict-next-book [:mit-vse-hotovo] nb-model)
 
-(predict-next-n-books [:konec-prokrastinace] 5)
+(predict-next-n-books [:rozvrat] 5)
 
