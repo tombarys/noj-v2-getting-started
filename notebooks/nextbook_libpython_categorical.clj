@@ -63,7 +63,7 @@
   (->> (str/split s #",\s\d+")
        (map #(str/replace % #"\d*×\s" ""))
        (map #(str/replace % #"," ""))
-       (map #(str/replace % #"\(A\+E\)|\[|\]|komplet|a\+e|\s\(P\+E\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha" ""))
+       (map #(str/replace % #"\(A\+E\)|\[|\]|komplet|a\+e|\s\(P\+E\+A\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha|taška" ""))
        (map #(str/replace % #"\+" ""))
        (map #(str/trim %))
        (map sanitize-column-name-str)
@@ -127,8 +127,8 @@
                    first)])
         columns)
       (tc/dataset)
-      (tc/rename-columns [:book :count])
-      (ds/sort-by-column :count)))
+      (tc/rename-columns [:book :customers-bought])
+      (tc/order-by :customers-bought :desc)))
 
 counts
 
@@ -186,7 +186,9 @@ counts
 
 
 (kind/table
- (tc/info processed-ds-numeric))
+ (ds/head
+  (tc/info processed-ds-numeric)
+  30))
 
 
 
@@ -381,4 +383,5 @@ counts
 
 (predict-next-book [:mit-vse-hotovo] linear-svc-model)
 
-(predict-next-n-books [:jed-dal] 5)
+(predict-next-n-books [:konec-prokrastinace] 5)
+
