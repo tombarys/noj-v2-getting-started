@@ -3,7 +3,6 @@
   (:require
    [scicloj.kindly.v4.kind :as kind]
    [tech.v3.dataset :as ds]
-   [tech.v3.tensor :as dtt]
    [tablecloth.api :as tc]
    [fastmath.stats]))
 
@@ -57,7 +56,6 @@
 (kind/table
  (tc/info orders-raw-ds))
 
-
 (defn parse-books [s]
   (->> (str/split s #",\s\d+")
        (map #(str/replace % #"\d*×\s" ""))
@@ -76,7 +74,6 @@
 
 
 ;; ## Pomocné funkce pro sanitizaci sloupců
-
 
 (defn aggregated-one-hot-encode [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
@@ -176,61 +173,9 @@ columns
 
 ;; ## Nejdříve korelační matice
 
-;; ### Korelační matice nativní
-
-(defn generate-correlation-matrix-native [agg-ds num-top-books]
-  (let [numeric-features (ds/drop-columns agg-ds [:zakaznik])
-        top-book-names (->> (ds/column-names numeric-features)
-                            (map (fn [col-name] [col-name (reduce + (ds/column numeric-features col-name))]))
-                            (sort-by second >)
-                            (take num-top-books)
-                            (map first))
-        top-books-ds (if (empty? top-book-names)
-                       (tc/dataset {})
-                       (ds/select-columns numeric-features top-book-names))]
-
-    (if (or (empty? top-book-names) (zero? (tc/column-count top-books-ds)))
-      {:correlation-dataset (tc/dataset {}) :correlation-tensor nil :col-names []}
-      (let [correlation-tensor (fastmath.stats/correlation-matrix top-books-ds)
-            col-names-vec (vec (ds/column-names top-books-ds))
-            ;; Create a dataset from the tensor. Columns are books.
-            correlation-ds (tc/dataset (zipmap col-names-vec
-                                               (map #(vec (dtt/slice-right correlation-tensor %)) ; Opraveno zde
-                                                    (range (count col-names-vec)))))]
-        {:correlation-dataset correlation-ds
-         :correlation-tensor correlation-tensor
-         :col-names col-names-vec}))))
-
 ;; ### Top X nejčastějších knih - korelační matice s využitím pythonu
-(def corr-matrix
-  (let [numeric-features (ds/drop-columns orders-agg-ds [:zakaznik])
 
-        ;; Najdeme top nejčastějších knih (nejvíc jedniček)
-        top-books (->> (ds/column-names numeric-features)
-                       (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
-                       (sort-by second >)
-                       (take 200)
-                       (map first))
-
-        ;; Filtrujeme dataset na tyto knihy
-        top-ds (ds/select-columns numeric-features top-books)
-
-        ;; Převedeme na pandas DataFrame - NEJJEDNODUŠŠÍ ZPŮSOB
-        pd (py/import-module "pandas")
-
-        ;; Vytvoříme DataFrame ze sloupců
-        df (py/call-attr pd "DataFrame"
-                         (into {} (map (fn [col]
-                                         [(name col) (vec (ds/column top-ds col))])
-                                       top-books)))
-
-        ;; Korelační matice
-        corr-matrix (py/call-attr df "corr")
-        corr-values (py/->jvm (py/get-attr corr-matrix "values"))
-        col-names (py/->jvm (py/get-attr df "columns"))]
-    {:corr-values corr-values
-     :col-names col-names}))
-
+;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/nextbook_libpython_categorical.clj
 (defn pandas-correlation-and-sums [dataset n-top-books]
   (let [numeric-features (ds/drop-columns dataset [:zakaznik])
 
@@ -246,25 +191,37 @@ columns
 
         ;; Pandas interop - použijeme pandas pro korelaci
         pd (py/import-module "pandas")
+        ;; Python: import pandas as pd
+        
         df (py/call-attr pd "DataFrame"
                          (into {} (map (fn [col]
                                          [(name col) (vec (ds/column top-ds col))])
                                        top-books)))
+        ;; Python: df = pd.DataFrame({col_name: dataset[col_name].tolist() for col_name in top_books})
 
         ;; Korelační matice a součty
         corr-matrix (py/call-attr df "corr")
+        ;; Python: corr_matrix = df.corr()
+        
         corr-values (py/->jvm (py/get-attr corr-matrix "values"))
+        ;; Python: corr_values = corr_matrix.values
+        
         col-names (py/->jvm (py/get-attr df "columns"))
+        ;; Python: col_names = df.columns
 
         ;; Součty přímo z pandas
         sum-values (py/->jvm (py/get-attr (py/call-attr corr-matrix "sum") "values"))
+        ;; Python: sum_values = corr_matrix.sum().values
 
 
         ;; Vytvoříme dataset se součty
         sum-ds (-> (map (fn [book sum] {:book book :sum-correlation sum})
                         col-names sum-values)
                    tc/dataset
-                   (tc/order-by [:sum-correlation] :desc))]
+                   (tc/order-by [:sum-correlation] :desc))
+        ;; Python: sum_df = pd.DataFrame({'book': col_names, 'sum_correlation': sum_values})
+        ;;         sum_df = sum_df.sort_values('sum_correlation', ascending=False)
+        ]
 
     {:correlation-values corr-values
      :column-names col-names
@@ -285,6 +242,7 @@ columns
            :xaxis {:tickangle 45}
            :width 1200
            :height 900}})
+
 
 
 ;; # A nyní predikce
@@ -452,5 +410,5 @@ columns
 
 (predict-next-book [:mit-vse-hotovo] nb-model)
 
-(predict-next-n-books [:rozvrat] 5)
+(predict-next-n-books [:proc-spime] 5)
 
