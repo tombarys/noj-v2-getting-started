@@ -4,7 +4,8 @@
    [scicloj.kindly.v4.kind :as kind]
    [tech.v3.dataset :as ds]
    [tablecloth.api :as tc]
-   [fastmath.stats]))
+   [fastmath.stats]
+   [clojure.string :as str]))
 
 (require
  '[libpython-clj2.python :as py]
@@ -49,12 +50,47 @@
   (tc/dataset
    "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
-    :column-allowlist ["Produkt (produkty)" "Zákazník"]
+    #_#_:column-allowlist ["Produkt (produkty)" "Zákazník"]
     #_#_:num-rows 2000
     :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
-(kind/table
- (tc/info orders-raw-ds))
+;; ### Výpis zadarmovek
+
+(defn how-many-books [s]
+  (if s
+    (->> s
+         (re-seq #"(\d+)×") 
+         (map #(Integer/parseInt (second %)))
+         (reduce +))
+    0))
+
+(def zadarmovky-with-counts
+  (-> orders-raw-ds
+      (ds/drop-missing :zakaznik)
+      (tc/select-rows #(zero? (:net-sales %)))
+      (tc/group-by [:zakaznik])
+      (tc/aggregate {:all-products #(str/join ", " (ds/column % :produkt-produkty))})
+      (tc/select-columns [:net-sales :zakaznik :all-products])
+      (tc/map-columns :how-many-books [:all-products]
+                      (fn [produkty] (how-many-books produkty)))
+      (ds/sort-by #(:how-many-books %))
+      (ds/drop-columns [:net-sales])))
+
+
+(kind/plotly
+  zadarmovky-with-counts
+  {:data [{:type "histogram"
+           :x (ds/column zadarmovky-with-counts :how-many-books)
+           :y (ds/column zadarmovky-with-counts :zakaznik)
+           :text (ds/column zadarmovky-with-counts :all-products)
+           :hoverinfo "text"}]
+   :layout {:title "Zadarmo knihy podle počtu knih"
+            :xaxis {:title "Počet knih"}
+            :yaxis {:title "Zákazník"}
+            :width 1200
+            :height 600}})        
+
+(tc/sum zadarmovky-with-counts :how-many-books)
 
 (defn parse-books [s]
   (->> (str/split s #",\s\d+")
@@ -71,7 +107,6 @@
                                 ["balicek" "poukaz" "zapisnik" "limitovana-edice" "taska" "aktualizovane-vydani" "cd"])))
        distinct
        (mapv keyword)))
-
 
 ;; ## Pomocné funkce pro sanitizaci sloupců
 
@@ -103,8 +138,7 @@
                          (tc/rows customer+orders :as-maps))
 
         ;; Vytvoříme nový dataset z one-hot dat
-        one-hot-ds (tc/dataset customers->rows)
-        _ (println (ds/column-names one-hot-ds))]
+        one-hot-ds (tc/dataset customers->rows)]
 
     ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
     (-> one-hot-ds
@@ -192,7 +226,7 @@ columns
         ;; Pandas interop - použijeme pandas pro korelaci
         pd (py/import-module "pandas")
         ;; Python: import pandas as pd
-        
+
         df (py/call-attr pd "DataFrame"
                          (into {} (map (fn [col]
                                          [(name col) (vec (ds/column top-ds col))])
@@ -202,10 +236,10 @@ columns
         ;; Korelační matice a součty
         corr-matrix (py/call-attr df "corr")
         ;; Python: corr_matrix = df.corr()
-        
+
         corr-values (py/->jvm (py/get-attr corr-matrix "values"))
         ;; Python: corr_values = corr_matrix.values
-        
+
         col-names (py/->jvm (py/get-attr df "columns"))
         ;; Python: col_names = df.columns
 
