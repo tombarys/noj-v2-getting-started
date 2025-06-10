@@ -3,13 +3,12 @@
   (:require
    [scicloj.kindly.v4.kind :as kind]
    [tech.v3.dataset :as ds]
-   [tablecloth.api :as tc]))
+   [tech.v3.tensor :as dtt]
+   [tablecloth.api :as tc]
+   [fastmath.stats]))
 
 (require
  '[libpython-clj2.python :as py]
- '[tech.v3.dataset :as ds]
- '[scicloj.kindly.v4.kind :as kind]
- '[tablecloth.api :as tc]
  '[clojure.string :as str]
  '[tech.v3.dataset.modelling :as ds-mod]
  '[tech.v3.dataset.categorical :as ds-cat]
@@ -47,7 +46,7 @@
           lower-cased (str/lower-case no-brackets)]
       lower-cased)))
 
-(def raw-ds
+(def orders-raw-ds
   (tc/dataset
    "/Users/tomas/Downloads/wc-orders-report-export-1749189240838.csv"
    {:header? true :separator ","
@@ -56,7 +55,7 @@
     :key-fn #(keyword (sanitize-column-name-str %))})) ;; tohle upraví jen názvy sloupců!
 
 (kind/table
- (tc/info raw-ds))
+ (tc/info orders-raw-ds))
 
 
 (defn parse-books [s]
@@ -71,7 +70,7 @@
        (map #(str/replace % #"\-+$" "")) ;; pomlčky na konci
        (map #(str/replace % #"3" "k3")) ;; eliminace čísel 3 na začátku dvou knih
        (remove (fn [item] (some (fn [substr] (str/includes? (name item) substr))
-                                ["balicek" "poukaz" "zapisnik" "limitovana-edice" "aktualizovane-vydani"])))
+                                ["balicek" "poukaz" "zapisnik" "limitovana-edice" "taska" "aktualizovane-vydani" "cd"])))
        distinct
        (mapv keyword)))
 
@@ -79,7 +78,7 @@
 ;; ## Pomocné funkce pro sanitizaci sloupců
 
 
-(defn create-one-hot-encoding-simple [raw-ds]
+(defn aggregated-one-hot-encode [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
         customer+orders (-> raw-ds
                             (ds/drop-missing :zakaznik)
@@ -107,32 +106,33 @@
                          (tc/rows customer+orders :as-maps))
 
         ;; Vytvoříme nový dataset z one-hot dat
-        one-hot-ds (tc/dataset customers->rows)]
+        one-hot-ds (tc/dataset customers->rows)
+        _ (println (ds/column-names one-hot-ds))]
 
     ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
     (-> one-hot-ds
-        #_(ds/drop-columns [:zakaznik]))))
+        #_(ds/drop-columns [""]))))
 
-(def ds-simple (create-one-hot-encoding-simple raw-ds))
+(def orders-agg-ds (aggregated-one-hot-encode orders-raw-ds))
 
-(def columns (-> ds-simple
+(def columns (-> orders-agg-ds
                  (ds/drop-columns [:zakaznik])
                  ds/column-names))
 
-
+columns
 (def counts
   (-> (map (fn [col]
-          [col (-> (tc/sum ds-simple col)
-                   (ds/column "summary")
-                   first)])
-        columns)
+             [col (-> (tc/sum orders-agg-ds col)
+                      (ds/column "summary")
+                      first)])
+           columns)
       (tc/dataset)
       (tc/rename-columns [:book :customers-bought])
       (tc/order-by :customers-bought :desc)))
 
-counts
+(kind/table counts)
 
-(defn create-one-hot-encoding [raw-ds]
+(defn one-hot-encode [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
         customer-books (-> raw-ds
                            (ds/drop-missing :zakaznik)
@@ -174,67 +174,111 @@ counts
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
 
+;; ## Nejdříve korelační matice
 
-;; ## Nejdříve korelační matička
+;; ### Korelační matice nativní
 
-;; Převedeme na one-hot a pro categorical mapping použijeme ds/categorical->number který vytvoří metadata
+(defn generate-correlation-matrix-native [agg-ds num-top-books]
+  (let [numeric-features (ds/drop-columns agg-ds [:zakaznik])
+        top-book-names (->> (ds/column-names numeric-features)
+                            (map (fn [col-name] [col-name (reduce + (ds/column numeric-features col-name))]))
+                            (sort-by second >)
+                            (take num-top-books)
+                            (map first))
+        top-books-ds (if (empty? top-book-names)
+                       (tc/dataset {})
+                       (ds/select-columns numeric-features top-book-names))]
 
- ;; Top X nejčastějších knih - korelační matice
- (def corr-matrix
-   (let [numeric-features (ds/drop-columns ds-simple [:zakaznik])
+    (if (or (empty? top-book-names) (zero? (tc/column-count top-books-ds)))
+      {:correlation-dataset (tc/dataset {}) :correlation-tensor nil :col-names []}
+      (let [correlation-tensor (fastmath.stats/correlation-matrix top-books-ds)
+            col-names-vec (vec (ds/column-names top-books-ds))
+            ;; Create a dataset from the tensor. Columns are books.
+            correlation-ds (tc/dataset (zipmap col-names-vec
+                                               (map #(vec (dtt/slice-right correlation-tensor %)) ; Opraveno zde
+                                                    (range (count col-names-vec)))))]
+        {:correlation-dataset correlation-ds
+         :correlation-tensor correlation-tensor
+         :col-names col-names-vec}))))
 
-         ;; Najdeme top nejčastějších knih (nejvíc jedniček)
-         top-books (->> (ds/column-names numeric-features)
-                        (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
-                        (sort-by second >)
-                        (take 75)
-                        (map first))
+;; ### Top X nejčastějších knih - korelační matice s využitím pythonu
+(def corr-matrix
+  (let [numeric-features (ds/drop-columns orders-agg-ds [:zakaznik])
 
-         ;; Filtrujeme dataset na tyto knihy
-         top-ds (ds/select-columns numeric-features top-books)
+        ;; Najdeme top nejčastějších knih (nejvíc jedniček)
+        top-books (->> (ds/column-names numeric-features)
+                       (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
+                       (sort-by second >)
+                       (take 200)
+                       (map first))
 
-         ;; Převedeme na pandas DataFrame - NEJJEDNODUŠŠÍ ZPŮSOB
-         pd (py/import-module "pandas")
+        ;; Filtrujeme dataset na tyto knihy
+        top-ds (ds/select-columns numeric-features top-books)
 
-         ;; Vytvoříme DataFrame ze sloupců
-         df (py/call-attr pd "DataFrame"
-                          (into {} (map (fn [col]
-                                          [(name col) (vec (ds/column top-ds col))])
-                                        top-books)))
+        ;; Převedeme na pandas DataFrame - NEJJEDNODUŠŠÍ ZPŮSOB
+        pd (py/import-module "pandas")
 
-         ;; Korelační matice
-         corr-matrix (py/call-attr df "corr")
-         corr-values (py/->jvm (py/get-attr corr-matrix "values"))
-         col-names (py/->jvm (py/get-attr df "columns"))]
-     {:corr-values corr-values 
-      :col-names col-names}))
+        ;; Vytvoříme DataFrame ze sloupců
+        df (py/call-attr pd "DataFrame"
+                         (into {} (map (fn [col]
+                                         [(name col) (vec (ds/column top-ds col))])
+                                       top-books)))
 
-(defn book-sum-correlations [correlation-data]
-  (let [col-names (:col-names correlation-data)
-        corr-values (:corr-values correlation-data)
-        num-books (count col-names)]
-    (if (< num-books 1) ; Změna podmínky, stačí jedna kniha pro sumu
-      (tc/dataset {:book [] :sum-correlation []})
-      (let [sum-correlations-data
-            (map-indexed
-             (fn [idx book-name]
-               (let [row-correlations (nth corr-values idx)
-                     ;; Součet všech korelací v řádku
-                     sum-of-correlations (reduce + row-correlations)]
-                 {:book book-name
-                  :sum-correlation sum-of-correlations})) ; Změna na sumu
-             col-names)]
-        (-> (tc/dataset sum-correlations-data)
-            (tc/order-by [:sum-correlation] :desc)))))) ; Třídění podle sumy
+        ;; Korelační matice
+        corr-matrix (py/call-attr df "corr")
+        corr-values (py/->jvm (py/get-attr corr-matrix "values"))
+        col-names (py/->jvm (py/get-attr df "columns"))]
+    {:corr-values corr-values
+     :col-names col-names}))
+
+(defn pandas-correlation-and-sums [dataset n-top-books]
+  (let [numeric-features (ds/drop-columns dataset [:zakaznik])
+
+        ;; Najdeme top knihy
+        top-books (->> (ds/column-names numeric-features)
+                       (map (fn [col] [col (reduce + (ds/column numeric-features col))]))
+                       (sort-by second >)
+                       (take n-top-books)
+                       (map first))
+
+        ;; Filtrujeme dataset
+        top-ds (ds/select-columns numeric-features top-books)
+
+        ;; Pandas interop - použijeme pandas pro korelaci
+        pd (py/import-module "pandas")
+        df (py/call-attr pd "DataFrame"
+                         (into {} (map (fn [col]
+                                         [(name col) (vec (ds/column top-ds col))])
+                                       top-books)))
+
+        ;; Korelační matice a součty
+        corr-matrix (py/call-attr df "corr")
+        corr-values (py/->jvm (py/get-attr corr-matrix "values"))
+        col-names (py/->jvm (py/get-attr df "columns"))
+
+        ;; Součty přímo z pandas
+        sum-values (py/->jvm (py/get-attr (py/call-attr corr-matrix "sum") "values"))
 
 
-(book-sum-correlations corr-matrix)
+        ;; Vytvoříme dataset se součty
+        sum-ds (-> (map (fn [book sum] {:book book :sum-correlation sum})
+                        col-names sum-values)
+                   tc/dataset
+                   (tc/order-by [:sum-correlation] :desc))]
+
+    {:correlation-values corr-values
+     :column-names col-names
+     :correlation-sums sum-ds}))
+
+(def corr-matrix
+  (pandas-correlation-and-sums orders-agg-ds 200)) ; Třídění podle sumy
+
 
 (kind/plotly
  {:data [{:type "heatmap"
-          :z (:corr-values corr-matrix)
-          :x (:col-names corr-matrix)
-          :y (:col-names corr-matrix)
+          :z (:correlation-values corr-matrix)
+          :x (:column-names corr-matrix)
+          :y (:column-names corr-matrix)
           :colorscale "RdBu"
           :zmid 0}]
   :layout {:title "Korelace top x nejčastějších knih"
@@ -246,8 +290,8 @@ counts
 ;; # A nyní predikce
 
 (def processed-ds-numeric
-  (-> raw-ds
-      create-one-hot-encoding
+  (-> orders-raw-ds
+      one-hot-encode
       (ds/categorical->number [:next-predicted-buy])))
 
 (kind/table
@@ -299,11 +343,11 @@ counts
                  :class_weight "balanced"}))
 
 #_(def linear-svc-model ;; 0.12
-  (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
-              {:dual false
-               :random_state 42
-               :tol 0.5
-               :max_iter 80})) ; {:loss "hinge", :class_weight "balanced"} blbý
+    (sk-clj/fit (:train split) :sklearn.svm "LinearSVC"
+                {:dual false
+                 :random_state 42
+                 :tol 0.5
+                 :max_iter 80})) ; {:loss "hinge", :class_weight "balanced"} blbý
 
 #_(def dtree-model ;; 0.11
     (sk-clj/fit (:train split) :sklearn.tree "DecisionTreeClassifier"
@@ -319,7 +363,7 @@ counts
                  :class_weight "balanced"}))
 
 (def nb-model ;; 0.13
-    (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB"))
+  (sk-clj/fit (:train split) :sklearn.naive_bayes "MultinomialNB"))
 
 #_(def knn-model ;; 0.14
     (sk-clj/fit (:train split) :sklearn.neighbors "KNeighborsClassifier"
