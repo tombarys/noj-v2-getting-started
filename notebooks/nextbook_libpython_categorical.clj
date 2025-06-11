@@ -4,6 +4,7 @@
    [scicloj.kindly.v4.kind :as kind]
    [tech.v3.dataset :as ds]
    [tablecloth.api :as tc]
+   [scicloj.tableplot.v1.plotly :as plotly]
    [fastmath.stats]
    [clojure.string :as str]))
 
@@ -76,10 +77,26 @@
       (ds/sort-by #(:how-many-books %))
       (ds/drop-columns [:net-sales])))
 
+(tc/info
+ (-> zadarmovky-with-counts
+     (tc/select-rows #(-> % :how-many-books (= 1)))))
+
+(-> zadarmovky-with-counts
+    (tc/select-rows #(-> % :how-many-books (> 10)))
+    (plotly/layer-bar {:=x :zakaznik
+                       :=y :how-many-books
+                       :background-color "beige"}))
+
+(-> zadarmovky-with-counts
+    #_(tc/group-by [:zakaznik])
+    #_(tc/aggregate {:n tc/row-count})
+    (plotly/layer-histogram {:=x :how-many-books
+                             :=histogram-nbins 5}))
+
 
 (kind/plotly
   zadarmovky-with-counts
-  {:data [{:type "histogram"
+  {:data [{:type "bar"
            :x (ds/column zadarmovky-with-counts :how-many-books)
            :y (ds/column zadarmovky-with-counts :zakaznik)
            :text (ds/column zadarmovky-with-counts :all-products)
