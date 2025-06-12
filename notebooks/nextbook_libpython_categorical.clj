@@ -246,59 +246,17 @@
            :width 1200
            :height 900}})
 
-;; ## Jednodušší řešení
-
-(defn simple-correlation-matrix [dataset]
-  (let [numeric-cols (ds/column-names dataset)
-        correlation-fn (fn [col1 col2]
-                         (fastmath.stats/correlation (ds/column dataset col1)
-                                                     (ds/column dataset col2)))
-        corr-matrix (for [col1 numeric-cols]
-                      (for [col2 numeric-cols]
-                        (correlation-fn col1 col2)))]
-    {:z corr-matrix
-     :x (map name numeric-cols)
-     :y (map name numeric-cols)}))
 
 
-^:kindly/hide-code
-["hello *hello* **hello**"]
+;; ## Nejjednodušší řešení 
 
-(as-> (tc/select-columns orders-agg-ds (take 20 (reverse columns))) data
-  (kind/plotly
-   {:data [{:type :heatmap
-            ;; For the `colorscale` parameter in Plotly, there are many options beyond "RdBu":
-
-            ;; For correlation matrices, these diverging colorscales work well:
-            ;; - "RdYlBu" (Red-Yellow-Blue)
-            ;; - "RdYlGn" (Red-Yellow-Green)
-            ;; - "Spectral" (Rainbow-like diverging)
-            ;; - "PiYG" (Pink-Yellow-Green)
-            ;; - "PRGn" (Purple-Green)
-            ;; - "BrBG" (Brown-Blue-Green)
-
-            ;; Other options include:
-            ;; - Sequential: "Viridis", "Plasma", "Inferno", "Blues", "Reds", "Greens"
-            ;; - Reversed versions: add "_r" suffix (e.g., "RdBu_r")
-            ;; - Custom arrays like: [[0, 'blue'], [0.5, 'white'], [1.0, 'red']]
-
-            ;; You can explore all built-in colorscales in the Plotly documentation.
-            :colorscale :Spectral
-            :zmid 0
-            :z (:z (simple-correlation-matrix data))
-            :x (:x (simple-correlation-matrix data))
-            :y (:y (simple-correlation-matrix data))}]
-    :layout {:title "Correlation matrix"
-             :width 1200
-             :height 900}}))
-
-;; ## Nejjednodušší řešení bez možnosti změny parametrů 
-
-(-> (tc/select-columns orders-agg-ds (take 10 (reverse columns)))
-    (plotly/layer-correlation
-     {:title "Correlation matrix" ;; nereaguje
-      :width 2400
-      :height 1200}))
+(-> (tc/select-columns orders-agg-ds (take 15 (reverse columns)))
+    (plotly/layer-correlation)
+    (plotly/plot)
+    (assoc-in [:layout] {:title "Korelace nově"
+                         :width 1200
+                         :height 900
+                         :xaxis {:tickangle 45}}))
 
 
 ;; # A nyní predikce
