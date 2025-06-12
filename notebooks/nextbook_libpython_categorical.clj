@@ -15,6 +15,8 @@
  '[tech.v3.dataset.categorical :as ds-cat]
  '[scicloj.metamorph.ml.loss :as loss])
 
+;; (py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
+
 ;; Inicializace Python prostředí s explicitní cestou
 (let [python-path (or (System/getenv "PYTHON_EXECUTABLE")
                       "/opt/homebrew/Caskroom/miniconda/base/envs/noj-ml/bin/python"
@@ -22,6 +24,7 @@
   (println "Initializing Python with:" python-path)
   (py/initialize! :python-executable python-path)
   (println "Python initialized successfully!")
+
 
   ;; Test sklearn dostupnosti
   (try
@@ -60,7 +63,7 @@
 (defn how-many-books [s]
   (if s
     (->> s
-         (re-seq #"(\d+)×") 
+         (re-seq #"(\d+)×")
          (map #(Integer/parseInt (second %)))
          (reduce +))
     0))
@@ -94,21 +97,10 @@
                              :=histogram-nbins 5}))
 
 
-(kind/plotly
-  zadarmovky-with-counts
-  {:data [{:type "bar"
-           :x (ds/column zadarmovky-with-counts :how-many-books)
-           :y (ds/column zadarmovky-with-counts :zakaznik)
-           :text (ds/column zadarmovky-with-counts :all-products)
-           :hoverinfo "text"}]
-   :layout {:title "Zadarmo knihy podle počtu knih"
-            :xaxis {:title "Počet knih"}
-            :yaxis {:title "Zákazník"}
-            :width 1200
-            :height 600}})        
 
 (tc/sum zadarmovky-with-counts :how-many-books)
 
+;; ## Pomocná funkce pro sanitizaci jmen knih
 (defn parse-books [s]
   (->> (str/split s #",\s\d+")
        (map #(str/replace % #"\d*×\s" ""))
@@ -125,7 +117,8 @@
        distinct
        (mapv keyword)))
 
-;; ## Pomocné funkce pro sanitizaci sloupců
+;; # Funkce pro agregaci datasetu po zákaznících + one-hot-encoding
+
 
 (defn aggregated-one-hot-encode [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
@@ -161,13 +154,15 @@
     (-> one-hot-ds
         #_(ds/drop-columns [""]))))
 
+
+;; ### Co řádek, to zákazník, ale bez roznásobení kvůli predikci
 (def orders-agg-ds (aggregated-one-hot-encode orders-raw-ds))
 
 (def columns (-> orders-agg-ds
                  (ds/drop-columns [:zakaznik])
                  ds/column-names))
 
-columns
+;; ### Kolik zákazníků koupilo danou knihu
 (def counts
   (-> (map (fn [col]
              [col (-> (tc/sum orders-agg-ds col)
@@ -180,53 +175,9 @@ columns
 
 (kind/table counts)
 
-(defn one-hot-encode [raw-ds]
-  (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
-        customer-books (-> raw-ds
-                           (ds/drop-missing :zakaznik)
-                           (tc/group-by [:zakaznik])
-                           (tc/aggregate {:all-products #(str/join ", " (ds/column % :produkt-produkty))})
-                           (tc/rename-columns {:summary :all-products}))
+;; ## Korelační matice 
 
-        ;; Získáme všechny unikátní knihy ze všech řádků
-        all-books (->> (ds/column customer-books :all-products)
-                       (mapcat parse-books)
-                       distinct
-                       sort)
-
-        ;; Pro každého zákazníka vytvoříme řádky kde každá kniha je postupně target
-        rows-with-books (mapcat
-                         (fn [customer-row]
-                           (let [customer-name (:zakaznik customer-row)
-                                 books-bought (parse-books (:all-products customer-row))]
-                             (when (> (count books-bought) 1)  ; Pouze zákazníci s více než jednou knihou
-                               ;; Pro každou koupenou knihu vytvoříme řádek
-                               (for [target-book books-bought]
-                                 (let [feature-books (set (remove #(= % target-book) books-bought))
-                                       one-hot-map (reduce (fn [acc book]
-                                                             (assoc acc book (if (contains? feature-books book) 1 0)))
-                                                           {}
-                                                           all-books)]
-                                   (merge {:zakaznik customer-name
-                                           :next-predicted-buy target-book}
-                                          one-hot-map))))))
-                         (tc/rows customer-books :as-maps))
-
-        ;; Vytvoříme nový dataset z one-hot dat
-        one-hot-ds (tc/dataset rows-with-books)
-        _ (println "Zákošů s více než 1 knihou je: " (ds/row-count rows-with-books))]
-
-    ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
-    (-> one-hot-ds
-        (ds/drop-columns [:zakaznik])
-        (ds-mod/set-inference-target [:next-predicted-buy]))))
-
-
-;; ## Nejdříve korelační matice
-
-;; ### Top X nejčastějších knih - korelační matice s využitím pythonu
-
-;; filepath: /Users/tomas/Dev/noj-v2-getting-started/notebooks/nextbook_libpython_categorical.clj
+;; ### Tady děláme korelace mezi knihami, používáme `pandas`
 (defn pandas-correlation-and-sums [dataset n-top-books]
   (let [numeric-features (ds/drop-columns dataset [:zakaznik])
 
@@ -295,8 +246,53 @@ columns
            :height 900}})
 
 
+;; 
 
 ;; # A nyní predikce
+
+;; ## Příprava na predikci
+
+(defn one-hot-encode [raw-ds]
+  (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
+        customer-books (-> raw-ds
+                           (ds/drop-missing :zakaznik)
+                           (tc/group-by [:zakaznik])
+                           (tc/aggregate {:all-products #(str/join ", " (ds/column % :produkt-produkty))})
+                           (tc/rename-columns {:summary :all-products}))
+
+        ;; Získáme všechny unikátní knihy ze všech řádků
+        all-books (->> (ds/column customer-books :all-products)
+                       (mapcat parse-books)
+                       distinct
+                       sort)
+
+        ;; Pro každého zákazníka vytvoříme řádky kde každá kniha je postupně target
+        rows-with-books (mapcat
+                         (fn [customer-row]
+                           (let [customer-name (:zakaznik customer-row)
+                                 books-bought (parse-books (:all-products customer-row))]
+                             (when (> (count books-bought) 1)  ; Pouze zákazníci s více než jednou knihou
+                               ;; Pro každou koupenou knihu vytvoříme řádek
+                               (for [target-book books-bought]
+                                 (let [feature-books (set (remove #(= % target-book) books-bought))
+                                       one-hot-map (reduce (fn [acc book]
+                                                             (assoc acc book (if (contains? feature-books book) 1 0)))
+                                                           {}
+                                                           all-books)]
+                                   (merge {:zakaznik customer-name
+                                           :next-predicted-buy target-book}
+                                          one-hot-map))))))
+                         (tc/rows customer-books :as-maps))
+
+        ;; Vytvoříme nový dataset z one-hot dat
+        one-hot-ds (tc/dataset rows-with-books)
+        _ (println "Zákošů s více než 1 knihou je: " (ds/row-count rows-with-books))]
+
+    ;; Vrátíme dataset s one-hot encoding a nastaveným inference targetem
+    (-> one-hot-ds
+        (ds/drop-columns [:zakaznik])
+        (ds-mod/set-inference-target [:next-predicted-buy]))))
+
 
 (def processed-ds-numeric
   (-> orders-raw-ds
@@ -381,12 +377,13 @@ columns
                  :weights "distance"
                  :metric "cosine"}))
 
-(-> (py/import-module "sklearn.svm")
-    (py/get-attr "__dict__")
-    py/->jvm
-    keys)
+(kind/hidden ;; jen výpis modulů pro pozdější použití
+ (-> (py/import-module "sklearn.svm")
+     (py/get-attr "__dict__")
+     py/->jvm
+     keys))
 
-;; Helper funkce pro konverzi čísel zpět na kategorie - NATIVNÍ PŘÍSTUP
+;; ### Helper funkce pro konverzi čísel zpět na kategorie - NATIVNÍ PŘÍSTUP
 (defn transfer-categorical-metadata
   "Přenese categorical metadata z reference datasetu do target datasetu"
   [target-dataset reference-dataset column-name]
@@ -409,7 +406,7 @@ columns
                                                      :next-predicted-buy)))]
     (ds-cat/reverse-map-categorical-xforms prediction-with-metadata)))
 
-;; NATIVNÍ PŘÍSTUP pro accuracy measurement
+;; ### NATIVNÍ PŘÍSTUP pro accuracy measurement
 (loss/classification-accuracy
  (-> (:test split)
      (ds-cat/reverse-map-categorical-xforms)
@@ -418,7 +415,7 @@ columns
      (convert-predictions-to-categories (:train split))
      (ds/column :next-predicted-buy)))
 
-;; Helper funkce pro predikce - NATIVNÍ PŘÍSTUP
+;; ### Helper funkce pro predikce - NATIVNÍ PŘÍSTUP
 (defn predict-next-book
   "Predikuje další knihu na základě vlastněných knih - používá nativní categorical konverzi"
   [owned-books my-model]

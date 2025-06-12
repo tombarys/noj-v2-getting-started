@@ -4,3 +4,4 @@ docs/.clay*
 .calva
 .clj-kondo
 .lsp
+classes
