@@ -15,7 +15,7 @@
  '[tech.v3.dataset.categorical :as ds-cat]
  '[scicloj.metamorph.ml.loss :as loss])
 
-;; (py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
+(py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
 
 ;; Inicializace Python prostředí s explicitní cestou
 (let [python-path (or (System/getenv "PYTHON_EXECUTABLE")
@@ -229,24 +229,14 @@
      :column-names col-names
      :correlation-sums sum-ds}))
 
+
 (def corr-matrix
   (pandas-correlation-and-sums orders-agg-ds 200)) ; Třídění podle sumy
 
 
-(kind/plotly
- {:data [{:type "heatmap"
-          :z (:correlation-values corr-matrix)
-          :x (:column-names corr-matrix)
-          :y (:column-names corr-matrix)
-          :colorscale "RdBu"
-          :zmid 0}]
-  :layout {:title "Korelace top x nejčastějších knih"
-           :xaxis {:tickangle 45}
-           :width 1200
-           :height 900}})
+(plotly/layer-correlation
+ (tc/select-columns orders-agg-ds :type/integer))
 
-
-;; 
 
 ;; # A nyní predikce
 
@@ -305,7 +295,8 @@
 
 (kind/table
  (ds/head
-  (tc/info processed-ds-numeric)
+  (-> (tc/info processed-ds-numeric)
+      (tc/order-by :skew))
   30))
 
 
