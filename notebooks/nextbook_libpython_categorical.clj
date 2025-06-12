@@ -308,6 +308,30 @@
   (tc/info processed-ds-numeric)
   30))
 
+
+;; ### Vysvětlení
+;;  Ve vašem případě s one-hot encoded daty (pouze hodnoty 0 a 1) je vysoké pozitivní skew (2-20) úplně normální a očekávané.
+
+;; **Proč máte takové hodnoty:**
+
+;; Pro binární sloupce (0/1) platí:
+;; - **skew = (q - p) / √(pq)** kde p = pravděpodobnost 1, q = pravděpodobnost 0
+;; - Pokud má knihu málo zákazníků (např. 5% = p=0.05), pak:
+;;   - q = 0.95
+;;   - skew = (0.95 - 0.05) / √(0.05 × 0.95) ≈ 4.1
+
+;; **Interpretace pro vaše knihy:**
+;; - **skew 2-5**: Knihu má asi 10-20% zákazníků
+;; - **skew 5-10**: Knihu má asi 5-10% zákazníků  
+;; - **skew 10-20**: Knihu má méně než 5% zákazníků (vzácné knihy)
+
+;; **Praktické využití:**
+;; - Knihy s vysokým skew (>15) jsou velmi vzácné - možná je vyřadit z analýzy
+;; - Knihy se středním skew (5-10) jsou dobré pro doporučování
+;; - Knihy s nízkým skew (2-5) jsou populárnější
+
+;; To sedí s vaším business případem - většina knih je koupena pouze malým počtem zákazníků, proto vidíte převážně vysoké pozitivní skew hodnoty.
+
 (kind/table
  (ds/head processed-ds-numeric))
 
