@@ -16,7 +16,7 @@
  '[tech.v3.dataset.categorical :as ds-cat]
  '[scicloj.metamorph.ml.loss :as loss])
 
-(py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
+;; (py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
 
 ;; Inicializace Python prostředí s explicitní cestou
 (let [python-path (or (System/getenv "PYTHON_EXECUTABLE")
@@ -86,16 +86,20 @@
      (tc/select-rows #(-> % :how-many-books (= 1)))))
 
 (-> zadarmovky-with-counts
-    (tc/select-rows #(-> % :how-many-books (> 10)))
+    (tc/select-rows #(-> % :how-many-books (> 1)))
     (plotly/layer-bar {:=x :zakaznik
                        :=y :how-many-books
-                       :background-color "beige"}))
+                       :background-color "beige"})
+    (assoc-in [:layout] {:width 1200
+                         :title "Výtisky, které měly 0 Kč"}))
 
 (-> zadarmovky-with-counts
     #_(tc/group-by [:zakaznik])
     #_(tc/aggregate {:n tc/row-count})
     (plotly/layer-histogram {:=x :how-many-books
-                             :=histogram-nbins 5}))
+                             :=histogram-nbins 20})
+    (assoc-in [:layout] {:width 1200
+                         :title "Výtisky, které měly 0 Kč"}))
 
 
 
@@ -232,7 +236,7 @@
 
 
 (def corr-matrix
-  (pandas-correlation-and-sums orders-agg-ds 200)) ; Třídění podle sumy
+  (pandas-correlation-and-sums orders-agg-ds 75)) ; Třídění podle sumy
 
 (kind/plotly
  {:data [{:type "heatmap"
@@ -247,6 +251,7 @@
            :height 900}})
 
 
+(kind/table (:correlation-sums corr-matrix))
 
 ;; ## Nejjednodušší řešení 
 
@@ -492,7 +497,7 @@
         (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
         (distinct acc)))))
 
-(predict-next-book [:mit-vse-hotovo] nb-model)
+(predict-next-book [:proc-spime] nb-model)
 
 (predict-next-n-books [:proc-spime] 5)
 
