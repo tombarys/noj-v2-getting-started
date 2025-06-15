@@ -497,7 +497,7 @@
         (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
         (distinct acc)))))
 
-(predict-next-book [:proc-spime] nb-model)
+(predict-next-book [:jak-na-adhd] nb-model)
 
-(predict-next-n-books [:proc-spime] 5)
+(predict-next-n-books [:jak-na-adhd] 4)
 

@@ -369,7 +369,7 @@
     (let [predicted (predict-next-book predict-from nb-model)]
       (if (&gt; idx 0)
         (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
-        (distinct acc)))))</code></pre></div></div><div style="margin:15px;"><div><pre><code class="sourceCode language-clojure source-clojure bg-light">(predict-next-book [:mit-vse-hotovo] nb-model)</code></pre></div></div><div style="margin:15px;"><div><pre><code class="sourceCode language-clojure printed-clojure">:ctyri-tisice-tydnu
+        (distinct acc)))))</code></pre></div></div><div style="margin:15px;"><div><pre><code class="sourceCode language-clojure source-clojure bg-light">(predict-next-book [:proc-spime] nb-model)</code></pre></div></div><div style="margin:15px;"><div><pre><code class="sourceCode language-clojure printed-clojure">:vas-kapesni-terapeut
 </code></pre></div></div><div style="margin:15px;"><div><pre><code class="sourceCode language-clojure source-clojure bg-light">(predict-next-n-books [:proc-spime] 5)</code></pre></div></div><div style="margin:15px;"><div><pre><code class="sourceCode language-clojure printed-clojure">(:vas-kapesni-terapeut
  :ultrazpracovani-lide
  :stvoreni-k-pohybu
