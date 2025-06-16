@@ -7,6 +7,8 @@
    [tablecloth.api :as tc]
    [scicloj.tableplot.v1.plotly :as plotly]
    [fastmath.stats]
+   [scicloj.metamorph.core :as mm]
+   [scicloj.metamorph.ml :as ml]
    [clojure.string :as str]))
 
 (require
@@ -36,7 +38,8 @@
       (throw e))))
 
 (require
- '[scicloj.sklearn-clj :as sk-clj])
+ '[scicloj.sklearn-clj :as sk-clj]
+ '[scicloj.sklearn-clj.cluster :as cluster])
 
 ;; # Pomocné funkce
 (defn sanitize-column-name-str [s]
@@ -50,6 +53,23 @@
           no-brackets (str/replace no-spaces #"\(|\)" "")
           lower-cased (str/lower-case no-brackets)]
       lower-cased)))
+
+;; ## Pomocná funkce pro sanitizaci jmen knih
+(defn parse-books [s]
+  (->> (str/split s #",\s\d+")
+       (map #(str/replace % #"\d*×\s" ""))
+       (map #(str/replace % #"," ""))
+       (map #(str/replace % #"\(A\+E\)|\[|\]|komplet|a\+e|\s\(P\+E\+A\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha|taška" ""))
+       (map #(str/replace % #"\+" ""))
+       (map #(str/trim %))
+       (map sanitize-column-name-str)
+       (map #(str/replace % #"\-\-.+$" "")) ;; zdvojené názvy
+       (map #(str/replace % #"\-+$" "")) ;; pomlčky na konci
+       (map #(str/replace % #"3" "k3")) ;; eliminace čísel 3 na začátku dvou knih
+       (remove (fn [item] (some (fn [substr] (str/includes? (name item) substr))
+                                ["balicek" "poukaz" "zapisnik" "limitovana-edice" "taska" "aktualizovane-vydani" "cd"])))
+       distinct
+       (mapv keyword)))
 
 (def orders-raw-ds
   (tc/dataset
@@ -105,27 +125,11 @@
 
 (tc/sum zadarmovky-with-counts :how-many-books)
 
-;; ## Pomocná funkce pro sanitizaci jmen knih
-(defn parse-books [s]
-  (->> (str/split s #",\s\d+")
-       (map #(str/replace % #"\d*×\s" ""))
-       (map #(str/replace % #"," ""))
-       (map #(str/replace % #"\(A\+E\)|\[|\]|komplet|a\+e|\s\(P\+E\+A\)|\s\(e\-kniha\)|\s\(P\+E\)|\s\(P\+A\)|\s\(E\+A\)|papír|papir|audio|e\-kniha|taška" ""))
-       (map #(str/replace % #"\+" ""))
-       (map #(str/trim %))
-       (map sanitize-column-name-str)
-       (map #(str/replace % #"\-\-.+$" "")) ;; zdvojené názvy
-       (map #(str/replace % #"\-+$" "")) ;; pomlčky na konci
-       (map #(str/replace % #"3" "k3")) ;; eliminace čísel 3 na začátku dvou knih
-       (remove (fn [item] (some (fn [substr] (str/includes? (name item) substr))
-                                ["balicek" "poukaz" "zapisnik" "limitovana-edice" "taska" "aktualizovane-vydani" "cd"])))
-       distinct
-       (mapv keyword)))
 
 ;; # Funkce pro agregaci datasetu po zákaznících + one-hot-encoding
 
 
-(defn aggregated-one-hot-encode [raw-ds]
+(defn aggregate-ds-onehot [raw-ds]
   (let [;; Nejdříve agregujeme všechny nákupy podle zákazníka
         customer+orders (-> raw-ds
                             (ds/drop-missing :zakaznik)
@@ -161,16 +165,16 @@
 
 
 ;; ### Co řádek, to zákazník, ale bez roznásobení kvůli predikci
-(def orders-agg-ds (aggregated-one-hot-encode orders-raw-ds))
+(def simple-ds-onehot (aggregate-ds-onehot orders-raw-ds))
 
-(def columns (-> orders-agg-ds
+(def columns (-> simple-ds-onehot
                  (ds/drop-columns [:zakaznik])
                  ds/column-names))
 
 ;; ### Kolik zákazníků koupilo danou knihu
 (def counts
   (-> (map (fn [col]
-             [col (-> (tc/sum orders-agg-ds col)
+             [col (-> (tc/sum simple-ds-onehot col)
                       (ds/column "summary")
                       first)])
            columns)
@@ -234,9 +238,8 @@
      :column-names col-names
      :correlation-sums sum-ds}))
 
-
 (def corr-matrix
-  (pandas-correlation-and-sums orders-agg-ds 75)) ; Třídění podle sumy
+  (pandas-correlation-and-sums simple-ds-onehot 75)) ; Třídění podle sumy
 
 (kind/plotly
  {:data [{:type "heatmap"
@@ -255,7 +258,7 @@
 
 ;; ## Nejjednodušší řešení 
 
-(-> (tc/select-columns orders-agg-ds (take 15 (reverse columns)))
+(-> (tc/select-columns simple-ds-onehot (take 15 (reverse columns)))
     (plotly/layer-correlation)
     (plotly/plot)
     (assoc-in [:layout] {:title "Korelace nově"
@@ -264,7 +267,33 @@
                          :xaxis {:tickangle 45}}))
 
 
-;; # A nyní predikce
+;; # Clustering 
+
+
+(defn basic-kmeans
+  "Základní K-Means bez preprocessing.
+   
+   Parametry stejné jako simple-kmeans"
+  ([data feature-columns]
+   (basic-kmeans data feature-columns 3))
+  ([data feature-columns k]
+   (basic-kmeans data feature-columns k 42))
+  ([data feature-columns k random-state]
+   (let [pipeline-fn (mm/pipeline
+                      #_(tc/select-columns feature-columns)
+                      {:metamorph/id :kmeans}
+                      (ml/model {:model-type :sklearn.cluster/kmeans
+                                 :n-clusters k
+                                 :random-state random-state
+                                 :n-init "auto"}))
+
+         ctx (mm/fit-pipe data pipeline-fn)
+         result (mm/transform-pipe data pipeline-fn ctx)]
+     (tc/add-column data :cluster (fn [_] (:sklearn.cluster/kmeans result))))))
+
+(basic-kmeans simple-ds-onehot columns)
+
+;; # Predikce
 
 ;; ## Příprava na predikci
 
@@ -310,18 +339,18 @@
         (ds-mod/set-inference-target [:next-predicted-buy]))))
 
 
-(def processed-ds-numeric
+(def multimplied-ds-onehot
   (-> orders-raw-ds
       one-hot-encode
       (ds/categorical->number [:next-predicted-buy])))
 
 (kind/table
- (tc/head processed-ds-numeric))
+ (tc/head multimplied-ds-onehot))
 
 
 (kind/table
  (ds/head
-  (-> (tc/info processed-ds-numeric)
+  (-> (tc/info multimplied-ds-onehot)
       (tc/order-by :skew))
   30))
 
@@ -350,12 +379,14 @@
 ;; To sedí s vaším business případem - většina knih je koupena pouze malým počtem zákazníků, proto vidíte převážně vysoké pozitivní skew hodnoty.
 
 (kind/table
- (ds/head processed-ds-numeric))
+ (ds/head multimplied-ds-onehot))
 
 (def split
-  (-> processed-ds-numeric
+  (-> multimplied-ds-onehot
       (tc/split->seq  :holdout {:seed 42})
       first))
+
+
 
 #_(def xgb-model ;; bacha, sekne se
     (sk-clj/fit (:train split) :sklearn.ensemble "GradientBoostingClassifier"
