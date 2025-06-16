@@ -1,6 +1,8 @@
 (ns nextbook-libpython-categorical
   (:import [java.text Normalizer Normalizer$Form])
   (:require
+   [fastmath.ml.clustering :as cluster]
+   [scicloj.ml.smile.clustering :as smile-clustering]
    [scicloj.metamorph.ml.rdatasets :as rdatasets]
    [scicloj.kindly.v4.kind :as kind]
    [tech.v3.dataset :as ds]
@@ -9,6 +11,7 @@
    [fastmath.stats]
    [scicloj.metamorph.core :as mm]
    [scicloj.metamorph.ml :as ml]
+   [scicloj.metamorph.ml.preprocessing :as prepro]
    [clojure.string :as str]))
 
 (require
@@ -38,8 +41,7 @@
       (throw e))))
 
 (require
- '[scicloj.sklearn-clj :as sk-clj]
- '[scicloj.sklearn-clj.cluster :as cluster])
+ '[scicloj.sklearn-clj :as sk-clj])
 
 ;; # Pomocné funkce
 (defn sanitize-column-name-str [s]
@@ -268,30 +270,131 @@
 
 
 ;; # Clustering 
+(clojure.repl/doc cluster/kmeans++)
+
+(def smallish-ds
+  (ds/head (-> simple-ds-onehot
+               (ds/drop-columns [:zakaznik])) 
+           1000))
+
+(cluster/kmeans++ [1 2 3 4 5 6 7 8 9 10
+                   11 12 13 14 15
+                   16 17 18 19 20
+                   21 22 23 24]
+                  {:clusters 3})
 
 
-(defn basic-kmeans
-  "Základní K-Means bez preprocessing.
-   
-   Parametry stejné jako simple-kmeans"
-  ([data feature-columns]
-   (basic-kmeans data feature-columns 3))
-  ([data feature-columns k]
-   (basic-kmeans data feature-columns k 42))
-  ([data feature-columns k random-state]
-   (let [pipeline-fn (mm/pipeline
-                      #_(tc/select-columns feature-columns)
-                      {:metamorph/id :kmeans}
-                      (ml/model {:model-type :sklearn.cluster/kmeans
-                                 :n-clusters k
-                                 :random-state random-state
-                                 :n-init "auto"}))
+(def fitted-ctx-2
+  (mm/fit
+   smallish-ds
+   #_(prepro/std-scale  :all {})
+   {:metamorph/id :k-means}
+   (scicloj.ml.smile.clustering/cluster
+    :k-means
+    [3 300]
+    :cluster)))
+    
+(-> fitted-ctx-2 :k-means  :info :distortion)  
 
-         ctx (mm/fit-pipe data pipeline-fn)
-         result (mm/transform-pipe data pipeline-fn ctx)]
-     (tc/add-column data :cluster (fn [_] (:sklearn.cluster/kmeans result))))))
 
-(basic-kmeans simple-ds-onehot columns)
+(def distortion-2
+  (->> [
+        {:metamorph/id :k-means}
+        [:scicloj.ml.smile.clustering/cluster
+         :k-means
+         [3 300]
+         :cluster]]
+       mm/->pipeline
+       (mm/fit-pipe smallish-ds)
+       :k-means
+       :info))
+
+distortion-2
+
+;; Add cluster assignments to your dataset
+(def clustered-ds
+  (let [clusters (-> fitted-ctx-2 :metamorph/data :k-means :cluster-ids)
+        with-clusters (ds/add-column smallish-ds {:cluster clusters})]
+    with-clusters))
+
+;; Calculate feature importance per cluster
+(defn calculate-feature-importance [ds]
+  (let [cluster-groups (ds/group-by ds :cluster)
+        cluster-stats (map-indexed
+                       (fn [idx cluster-ds]
+                         (let [feature-means (-> cluster-ds
+                                                (ds/drop-columns [:cluster])
+                                                (ds/descriptive-stats)
+                                                (ds/select-columns [:col-name :mean]))]
+                           {:cluster idx
+                            :size (ds/row-count cluster-ds)
+                            :top-features (-> feature-means
+                                             (tc/order-by :mean :desc)
+                                             (ds/head 5))}))
+                       (vals cluster-groups))]
+    cluster-stats))
+
+;; Get feature importance for each cluster
+(def cluster-features (calculate-feature-importance clustered-ds))
+
+
+(kind/table cluster-features)
+
+;; Display results
+(doseq [{:keys [cluster size top-features]} cluster-features]
+  (println (str "Cluster " cluster " (size: " size "):"))
+  (kind/table top-features)
+  (println))
+
+;; Create a visualization of clusters
+(def cluster-viz
+  (-> clustered-ds
+      (plotly/layer-point {:=x (tc/column-names smallish-ds 0)
+                           :=y (tc/column-names smallish-ds 1)
+                           :=color :cluster
+                           :opacity 0.7})
+      (assoc-in [:layout] {:title "Book Purchase Clusters"
+                           :width 800
+                           :height 600})))
+
+(kind/plotly cluster-viz)
+
+;; Create a heatmap showing average feature values per cluster
+(def cluster-heatmap-data
+  (-> clustered-ds
+      (ds/group-by [:cluster])
+      (tc/aggregate {:means (fn [ds] (tc/mean (ds/drop-columns ds [:cluster])))})
+      (ds/select-columns [:cluster :means])
+      (ds/update-column :means
+                        (fn [means-col]
+                          (map #(-> %
+                                    (ds/order-by :mean :desc)
+                                    (ds/head 10))
+                               means-col)))))
+
+;; Visualize the top 10 features for each cluster
+(def feature-heatmap
+  (let [top-features-by-cluster (-> cluster-heatmap-data
+                                    :means
+                                    (->> (map #(ds/column-names % :all))))]
+    (kind/vega-lite
+     {:data {:values (flatten
+                       (for [i (range (count top-features-by-cluster))]
+                         (let [features (nth top-features-by-cluster i)]
+                           (for [feature features]
+                             {:cluster (str "Cluster " i)
+                              :feature feature
+                              :value (-> clustered-ds
+                                         (ds/select-rows #(= (:cluster %) i))
+                                         (tc/mean feature))}))))}
+      :mark "rect"
+      :encoding {:x {:field "feature" :type "nominal"}
+                 :y {:field "cluster" :type "nominal"}
+                 :color {:field "value" :type "quantitative"}}
+      :width 800
+      :height 400})))
+
+(kind/vega-lite feature-heatmap)
 
 ;; # Predikce
 
