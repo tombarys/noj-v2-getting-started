@@ -86,3 +86,5 @@ accuracy
 (println "Náhodný baseline:" random-baseline-accuracy)
 (println "Model accuracy:" 0.149)
 (println "Zlepšení oproti náhodnému:" (/ 0.149 random-baseline-accuracy))
+
+

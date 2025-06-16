@@ -1,8 +1,8 @@
 (ns nextbook-libpython-categorical
   (:import [java.text Normalizer Normalizer$Form])
   (:require
-   [fastmath.ml.clustering :as cluster]
-   [scicloj.ml.smile.clustering :as smile-clustering]
+   [fastmath.ml.clustering :as fm-cluster]
+   [scicloj.ml.smile.clustering :as smile-cluster]
    [scicloj.metamorph.ml.rdatasets :as rdatasets]
    [scicloj.kindly.v4.kind :as kind]
    [tech.v3.dataset :as ds]
@@ -269,133 +269,53 @@
                          :xaxis {:tickangle 45}}))
 
 
-;; # Clustering 
-(clojure.repl/doc cluster/kmeans++)
+;; # Clustering - pokusy
+(clojure.repl/doc fm-cluster/kmeans++)
 
 (def smallish-ds
   (ds/head (-> simple-ds-onehot
-               (ds/drop-columns [:zakaznik])) 
+               (ds/drop-columns [:zakaznik]))
            1000))
 
-(cluster/kmeans++ [1 2 3 4 5 6 7 8 9 10
-                   11 12 13 14 15
-                   16 17 18 19 20
-                   21 22 23 24]
-                  {:clusters 3})
+;; 2. Convert correlation matrix to a distance matrix (1 - correlation)
 
+(defn cluster-books-by-cooccurrence [ds n-clusters]
+  (let [;; Get book columns (excluding customer ID)
+        book-columns (-> ds
+                         (ds/drop-columns [:zakaznik])
+                         ds/column-names)
 
-(def fitted-ctx-2
-  (mm/fit
-   smallish-ds
-   #_(prepro/std-scale  :all {})
-   {:metamorph/id :k-means}
-   (scicloj.ml.smile.clustering/cluster
-    :k-means
-    [3 300]
-    :cluster)))
-    
-(-> fitted-ctx-2 :k-means  :info :distortion)  
+        _ (println book-columns)
+        ;; Create correlation matrix between books
+        book-correlations (-> ds
+                              (ds/drop-columns [:zakaznik])
+                              (pandas-correlation-and-sums 1000))
 
+        _ (println book-correlations)
+        ;; Convert to distance matrix (transpose for book-to-book relationships)
+        book-features (-> book-correlations
+                          ds/rows
+                          vec)
+        _ (println book-features)
 
-(def distortion-2
-  (->> [
-        {:metamorph/id :k-means}
-        [:scicloj.ml.smile.clustering/cluster
-         :k-means
-         [3 300]
-         :cluster]]
-       mm/->pipeline
-       (mm/fit-pipe smallish-ds)
-       :k-means
-       :info))
+        ;; Apply k-means clustering to books
+        book-names (vec book-columns)
+        clusters (fm-cluster/kmeans++ book-features n-clusters)]
 
-distortion-2
+    {:book-names book-names
+     :clusters clusters
+     :cluster-assignments (map #(:cluster %) clusters)}))
 
-;; Add cluster assignments to your dataset
-(def clustered-ds
-  (let [clusters (-> fitted-ctx-2 :metamorph/data :k-means :cluster-ids)
-        with-clusters (ds/add-column smallish-ds {:cluster clusters})]
-    with-clusters))
+;; Cluster books into groups
+(def book-cluster-result
+  (cluster-books-by-cooccurrence smallish-ds 5))
 
-;; Calculate feature importance per cluster
-(defn calculate-feature-importance [ds]
-  (let [cluster-groups (ds/group-by ds :cluster)
-        cluster-stats (map-indexed
-                       (fn [idx cluster-ds]
-                         (let [feature-means (-> cluster-ds
-                                                (ds/drop-columns [:cluster])
-                                                (ds/descriptive-stats)
-                                                (ds/select-columns [:col-name :mean]))]
-                           {:cluster idx
-                            :size (ds/row-count cluster-ds)
-                            :top-features (-> feature-means
-                                             (tc/order-by :mean :desc)
-                                             (ds/head 5))}))
-                       (vals cluster-groups))]
-    cluster-stats))
-
-;; Get feature importance for each cluster
-(def cluster-features (calculate-feature-importance clustered-ds))
-
-
-(kind/table cluster-features)
-
-;; Display results
-(doseq [{:keys [cluster size top-features]} cluster-features]
-  (println (str "Cluster " cluster " (size: " size "):"))
-  (kind/table top-features)
-  (println))
-
-;; Create a visualization of clusters
-(def cluster-viz
-  (-> clustered-ds
-      (plotly/layer-point {:=x (tc/column-names smallish-ds 0)
-                           :=y (tc/column-names smallish-ds 1)
-                           :=color :cluster
-                           :opacity 0.7})
-      (assoc-in [:layout] {:title "Book Purchase Clusters"
-                           :width 800
-                           :height 600})))
-
-(kind/plotly cluster-viz)
-
-;; Create a heatmap showing average feature values per cluster
-(def cluster-heatmap-data
-  (-> clustered-ds
-      (ds/group-by [:cluster])
-      (tc/aggregate {:means (fn [ds] (tc/mean (ds/drop-columns ds [:cluster])))})
-      (ds/select-columns [:cluster :means])
-      (ds/update-column :means
-                        (fn [means-col]
-                          (map #(-> %
-                                    (ds/order-by :mean :desc)
-                                    (ds/head 10))
-                               means-col)))))
-
-;; Visualize the top 10 features for each cluster
-(def feature-heatmap
-  (let [top-features-by-cluster (-> cluster-heatmap-data
-                                    :means
-                                    (->> (map #(ds/column-names % :all))))]
-    (kind/vega-lite
-     {:data {:values (flatten
-                       (for [i (range (count top-features-by-cluster))]
-                         (let [features (nth top-features-by-cluster i)]
-                           (for [feature features]
-                             {:cluster (str "Cluster " i)
-                              :feature feature
-                              :value (-> clustered-ds
-                                         (ds/select-rows #(= (:cluster %) i))
-                                         (tc/mean feature))}))))}
-      :mark "rect"
-      :encoding {:x {:field "feature" :type "nominal"}
-                 :y {:field "cluster" :type "nominal"}
-                 :color {:field "value" :type "quantitative"}}
-      :width 800
-      :height 400})))
-
-(kind/vega-lite feature-heatmap)
-
+;; Group books by cluster
+(def books-by-cluster
+  (group-by second
+            (map vector
+                 (:book-names book-cluster-result)
+                 (:cluster-assignments book-cluster-result))))
 ;; # Predikce
 
 ;; ## Příprava na predikci
