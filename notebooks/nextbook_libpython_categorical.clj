@@ -307,17 +307,29 @@
      #_#_:cluster-assignments (map #(:cluster %) clusters)}))
 
 ;; Cluster books into groups
-(def book-cluster-result
+#_(def book-cluster-result
   (cluster-books-by-cooccurrence smallish-ds 5))
 
 ;; Group books by cluster
-(def books-by-cluster
+#_(def books-by-cluster
   (group-by second
             (map vector
                  (:book-names book-cluster-result)
                  (:cluster-assignments book-cluster-result))))
-;; # Predikce
 
+
+;; # Hraju si se sloupci
+
+
+
+(kind/table
+ (-> orders-raw-ds
+     (tc/head 1000)
+     (tc/group-by [:zakaznik])
+     (tc/aggregate {:net-sales tc/sum})))
+
+
+;; # Predikce
 ;; ## Příprava na predikci
 
 (defn one-hot-encode [raw-ds]
