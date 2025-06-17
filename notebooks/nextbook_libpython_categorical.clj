@@ -289,22 +289,22 @@
         ;; Create correlation matrix between books
         book-correlations (-> ds
                               (ds/drop-columns [:zakaznik])
-                              (pandas-correlation-and-sums 1000))
+                              (pandas-correlation-and-sums 75))
 
-        _ (println book-correlations)
+        _ (println "---- korelace: " book-correlations)
         ;; Convert to distance matrix (transpose for book-to-book relationships)
         book-features (-> book-correlations
                           ds/rows
                           vec)
-        _ (println book-features)
+        _ (println "---- fíčury: " book-features)
 
         ;; Apply k-means clustering to books
         book-names (vec book-columns)
-        clusters (fm-cluster/kmeans++ book-features n-clusters)]
+        clusters nil #_(fm-cluster/kmeans++ book-features n-clusters)]
 
     {:book-names book-names
      :clusters clusters
-     :cluster-assignments (map #(:cluster %) clusters)}))
+     #_#_:cluster-assignments (map #(:cluster %) clusters)}))
 
 ;; Cluster books into groups
 (def book-cluster-result
