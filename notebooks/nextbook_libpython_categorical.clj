@@ -1,6 +1,7 @@
 (ns nextbook-libpython-categorical
   (:import [java.text Normalizer Normalizer$Form])
   (:require
+   [tech.v3.dataset.tensor :as dst]
    [fastmath.ml.clustering :as fm-cluster]
    [scicloj.ml.smile.clustering :as smile-cluster]
    [scicloj.metamorph.ml.rdatasets :as rdatasets]
@@ -21,7 +22,7 @@
  '[tech.v3.dataset.categorical :as ds-cat]
  '[scicloj.metamorph.ml.loss :as loss])
 
-(py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
+;; (py/initialize! {:python-executable "/Users/tomas/miniconda3/bin/python"}) ;; pro iMac
 
 ;; Inicializace Python prostředí s explicitní cestou
 (let [python-path (or (System/getenv "PYTHON_EXECUTABLE")
@@ -241,7 +242,63 @@
      :correlation-sums sum-ds}))
 
 (def corr-matrix
-  (pandas-correlation-and-sums simple-ds-onehot 75)) ; Třídění podle sumy
+  (pandas-correlation-and-sums simple-ds-onehot 100)) ; Třídění podle sumy
+
+
+(defn get-top-bottom-correlations [corr-matrix n]
+  (let [;; Převést tensor na dataset s correct názvy sloupců
+        ds (-> (dst/tensor->dataset (:correlation-values corr-matrix))
+               (ds/rename-columns (:column-names corr-matrix)))
+
+        ;; Získat názvy knih
+        book-names (:column-names corr-matrix)
+
+        ;; Získat všechny řádky jako mapy
+        rows-data (tc/rows ds :as-maps)
+
+        ;; Vytvořit páry s korelacemi
+        all-entries (for [row-idx (range (count rows-data))
+                          col-name book-names
+                          :let [row-data (nth rows-data row-idx)
+                                correlation (get row-data col-name)]]
+                      {:book1 (nth book-names row-idx)
+                       :book2 col-name
+                       :correlation correlation})
+
+        ;; Převést na dataset a seřadit
+        entries-ds (-> (tc/dataset all-entries)
+                       (tc/drop-rows #(== 1 (:correlation %))))
+        sorted (tc/order-by entries-ds [:correlation] [:desc])
+
+        ;; Vzít top N a bottom N
+        top-n (-> sorted
+                  (tc/head n)
+                  (tc/add-column :type "TOP 50"))
+        bottom-n (-> sorted
+                     (tc/tail n)
+                     (tc/add-column :type "BOTTOM 50"))]
+
+    (tc/concat top-n bottom-n)))
+
+;; Použití:
+(def top-bottom-50 (get-top-bottom-correlations corr-matrix 50))
+
+(tc/print-dataset top-bottom-50)
+
+(tc/head top-bottom-50 100)
+
+(kind/table 
+ top-bottom-50
+ {:use-datatables true
+  :datatables {:scrollY 800}})
+
+
+ #_(-> top-bottom-50
+     (plotly/layer-histogram {:=x :correlation
+                              :=histogram-nbins 50
+                              :background-color "beige"})
+     (assoc-in [:layout] {:width 1200
+                          :title "Největší korelace"}))
 
 (kind/plotly
  {:data [{:type "heatmap"
