@@ -656,7 +656,7 @@
         (recur (conj acc predicted) (conj predict-from predicted) (dec idx))
         (distinct acc)))))
 
-(predict-next-book [:zacnete-s-proc :objevte-sve-proc] nb-model)
+(predict-next-book [:zacnete-s-proc] nb-model)
 
 (predict-next-n-books [:mysleni-rychle-a-pomale] 4)
 
