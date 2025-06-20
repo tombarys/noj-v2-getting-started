@@ -1,6 +1,7 @@
 (ns nextbook-libpython-categorical
   (:import [java.text Normalizer Normalizer$Form])
   (:require
+   [fastmath.stats :as stats]
    [tech.v3.dataset.tensor :as dst]
    [fastmath.ml.clustering :as fm-cluster]
    [scicloj.ml.smile.clustering :as smile-cluster]
@@ -292,14 +293,15 @@
  {:use-datatables true
   :datatables {:scrollY 800}})
 
+;; # Zatím nejsnadnější řešení korelací
 
-(require '[fastmath.stats :as stats])
-
-
-(defn correlation-matrix [dataset numeric-cols]
-  (let [data (tc/select-columns dataset numeric-cols)]
-    (->> (for [col1 numeric-cols
-               col2 numeric-cols]
+(defn correlation-matrix [dataset]
+  (let [columns (-> dataset
+                    (tc/drop-columns [:zakaznik])
+                    (tc/column-names dataset))
+        data (tc/select-columns dataset columns)]
+    (->> (for [col1 columns
+               col2 columns]
            {:var1 col1
             :var2 col2
             :correlation (stats/pearson-correlation
@@ -307,11 +309,30 @@
                           (tc/column data col2))})
          (tc/dataset))))
 
-columns
+(def corr-matrix-new 
+  (correlation-matrix simple-ds-onehot))
 
-(correlation-matrix simple-ds-onehot columns)
+(defn get-correlation-for-book [book-col corr-matrix]
+    (-> corr-matrix
+        (tc/select-rows #(= (:var1 %) book-col))
+        (tc/drop-columns [:var1])
+        (tc/order-by :correlation :desc)))
 
+#_(get-correlation-for-book :nexus corr-matrix-new)
 
+(get-correlation-for-book :ctyri-tisice-tydnu corr-matrix-new)
+
+(kind/table
+ (-> corr-matrix-new
+     (tc/rename-columns {:var1 :book1
+                         :var2 :book2})
+     (tc/group-by :book1)
+     (tc/select-columns [:book2 :correlation])
+     (tc/order-by :correlation :desc))
+ {:use-datatables true
+  :datatables {:scrollY 800}})
+
+;; # Toto ještě používá stará data, opravit na new
 
 (kind/plotly
  {:data [{:type "heatmap"
