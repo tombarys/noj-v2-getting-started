@@ -281,24 +281,17 @@
     (tc/concat top-n bottom-n)))
 
 ;; Použití:
-(def top-bottom-50 (get-top-bottom-correlations corr-matrix 50))
+(def top-bottom (get-top-bottom-correlations corr-matrix 100))
 
-(tc/print-dataset top-bottom-50)
-
-(tc/head top-bottom-50 100)
+(tc/head top-bottom 200)
 
 (kind/table 
- top-bottom-50
+ (-> top-bottom
+     (tc/group-by :book1)
+     (tc/select-columns [:book2 :correlation :type]))
  {:use-datatables true
   :datatables {:scrollY 800}})
 
-
- #_(-> top-bottom-50
-     (plotly/layer-histogram {:=x :correlation
-                              :=histogram-nbins 50
-                              :background-color "beige"})
-     (assoc-in [:layout] {:width 1200
-                          :title "Největší korelace"}))
 
 (kind/plotly
  {:data [{:type "heatmap"
