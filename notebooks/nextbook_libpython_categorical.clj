@@ -293,6 +293,26 @@
   :datatables {:scrollY 800}})
 
 
+(require '[fastmath.stats :as stats])
+
+
+(defn correlation-matrix [dataset numeric-cols]
+  (let [data (tc/select-columns dataset numeric-cols)]
+    (->> (for [col1 numeric-cols
+               col2 numeric-cols]
+           {:var1 col1
+            :var2 col2
+            :correlation (stats/pearson-correlation
+                          (tc/column data col1)
+                          (tc/column data col2))})
+         (tc/dataset))))
+
+columns
+
+(correlation-matrix simple-ds-onehot columns)
+
+
+
 (kind/plotly
  {:data [{:type "heatmap"
           :z (:correlation-values corr-matrix)
@@ -317,6 +337,7 @@
                          :width 1200
                          :height 900
                          :xaxis {:tickangle 45}}))
+
 
 
 ;; # Clustering - pokusy
