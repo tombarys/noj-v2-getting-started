@@ -1,4 +1,5 @@
 (ns nextbook-libpython-categorical
+  (:gen-class)
   (:import [java.text Normalizer Normalizer$Form])
   (:require
    [fastmath.stats :as stats]

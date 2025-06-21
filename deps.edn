@@ -1,8 +1,19 @@
-{:deps {org.scicloj/noj {:mvn/version "2-beta18"}
+{:deps {org.clojure/clojure {:mvn/version "1.12.0"}
+        org.scicloj/noj {:mvn/version "2-beta18"}
         org.scicloj/metamorph.ml {:mvn/version "1.2beta1.6"}
         clj-python/libpython-clj  {:mvn/version "2.026"}
         org.scicloj/sklearn-clj {:mvn/version "0.5"}
         scicloj/scicloj.ml {:mvn/version "0.3"}
         org.scicloj/scicloj.ml.smile {:mvn/version "7.5.3"}
         org.clojars.generateme/fastmath-clustering {:mvn/version "1.0.0"}}
+ :aliases
+ {:run-m {:main-opts ["-m" "nextbook-libpython-categorical"]}
+  :run-x {:ns-default nextbook-libpython-categorical
+          :exec-fn predict-next-book
+          :exec-args {:name "Clojure"}}
+  :build {:extra-deps {io.github.clojure/tools.build {:mvn/version "0.10.5"}}
+          :ns-default build}
+  :uberjar {:replace-deps {io.github.clojure/tools.build {:mvn/version "0.10.5"}}
+            :exec-fn build/uber
+            :exec-args {:main 'nextbook-libpython-categorical}}}
  :paths ["notebooks"]}
